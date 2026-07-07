@@ -1,0 +1,18 @@
+{
+  "ibkr": {
+    "token": "PUT_YOUR_FLEX_TOKEN_HERE",
+    "query_id": "PUT_YOUR_QUERY_ID_HERE"
+  },
+  "base_currency": "EUR",
+  "monthly_contribution": 1600,
+  "rebalance_band_pct": 0.05,
+  "targets": [
+    { "isin": "IE00BD4TXV59", "sleeve": "Core World",       "name": "UBS Core MSCI World",              "target_pct": 0.35 },
+    { "isin": "IE00BL25JP72", "sleeve": "Momentum",         "name": "Xtrackers MSCI World Momentum",     "target_pct": 0.10 },
+    { "isin": "IE00BL25JL35", "sleeve": "Quality",          "name": "Xtrackers MSCI World Quality",      "target_pct": 0.10 },
+    { "isin": "IE00BKM4GZ66", "sleeve": "EM IMI",           "name": "iShares Core MSCI EM IMI",          "target_pct": 0.10 },
+    { "isin": "IE00BDBRDM35", "sleeve": "Global Agg",       "name": "Vanguard Global Agg EUR-Hedged",    "target_pct": 0.20 },
+    { "isin": "IE00B0M62X26", "sleeve": "Inflation-Linked", "name": "iShares Euro Inflation-Linked",     "target_pct": 0.05 },
+    { "isin": "IE00B579F325", "sleeve": "Gold",             "name": "Invesco Physical Gold",             "target_pct": 0.10 }
+  ]
+}

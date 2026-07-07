@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Portfolio Rebalancer</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f1216">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rebalance">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-32.png">
+<script>try{document.documentElement.setAttribute('data-theme',localStorage.getItem('pr_theme')||'dark');}catch(e){}</script>
+<style>
+  :root{
+    --bg:#0f1216; --card:#171b21; --card2:#1d222a; --line:#272d37;
+    --txt:#e7ecf3; --dim:#9aa5b4; --accent:#4f9dff;
+    --green:#3fb57a; --red:#e5695f; --amber:#e0a53c;
+  }
+  :root[data-theme="light"]{
+    --bg:#f3f5f8; --card:#ffffff; --card2:#eef1f5; --line:#e2e6ec;
+    --txt:#141a22; --dim:#5b6675; --accent:#1f6fe0;
+    --green:#1f9d55; --red:#d1453b; --amber:#b7791f;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:920px;margin:0 auto;
+    padding:0 max(16px,env(safe-area-inset-left)) 64px max(16px,env(safe-area-inset-right))}
+  header{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line);
+    padding-top:env(safe-area-inset-top)}
+  .topbar{display:flex;align-items:center;gap:11px;padding:12px 0}
+  .applogo{width:34px;height:34px;border-radius:9px;flex-shrink:0}
+  .topbar h1{font-size:19px;margin:0;flex:1;font-weight:750;letter-spacing:-.3px}
+  .iconbtn{background:none;border:1px solid var(--line);color:var(--dim);font-size:16px;
+    cursor:pointer;padding:6px 9px;border-radius:9px;line-height:1}
+  .iconbtn:hover{background:var(--card2)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 16px;margin:14px 0}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim);margin:20px 2px 8px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .stat{flex:1;min-width:150px;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:13px 15px}
+  .stat .label{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  .stat .value{font-size:23px;font-weight:700;margin-top:3px}
+  input,textarea{background:var(--card2);border:1px solid var(--line);color:var(--txt);
+    border-radius:9px;padding:9px 11px;font-size:15px;font-family:inherit;width:100%}
+  input:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  input.amt{font-size:22px;font-weight:700;padding:6px 10px}
+  .tabs{display:flex;gap:6px;margin-bottom:10px}
+  .tab{flex:1;text-align:center;padding:9px;border:1px solid var(--line);border-radius:9px;
+    cursor:pointer;color:var(--dim);font-weight:600;font-size:14px;background:var(--card)}
+  .tab.on{background:var(--accent);color:#06121f;border-color:var(--accent)}
+  .mrow{display:grid;grid-template-columns:1fr 120px 108px;gap:8px;align-items:center;
+    padding:7px 0;border-bottom:1px solid var(--line)}
+  .mrow:last-child{border-bottom:0}
+  .mrow .nm{font-weight:600;font-size:14px}
+  .mrow .nm small{display:block;color:var(--dim);font-weight:400;font-size:11px;font-family:ui-monospace,monospace}
+  .mrow .hd{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.5px;text-align:right}
+  button.primary{background:var(--accent);color:#06121f;border:0;border-radius:9px;
+    padding:10px 15px;font-weight:700;cursor:pointer;font-size:14px}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);
+    border-radius:9px;padding:9px 13px;font-weight:600;cursor:pointer;font-size:13px}
+  .buybox{background:linear-gradient(180deg,#16241c,#141a17);border:1px solid #244634;border-radius:12px}
+  :root[data-theme="light"] .buybox{background:linear-gradient(180deg,#eafaf0,#f4fbf6);border-color:#bfe6cf}
+  .buyrow{display:flex;align-items:center;justify-content:space-between;padding:12px 15px;border-bottom:1px solid rgba(128,128,128,.15)}
+  .buyrow:last-child{border-bottom:0}
+  .buyrow .nm{font-weight:650}
+  .buyrow .isin{color:var(--dim);font-size:11px;font-family:ui-monospace,monospace}
+  .buyrow .eur{font-size:19px;font-weight:750;color:var(--green);text-align:right}
+  .buyrow .sh{color:var(--dim);font-size:12px;text-align:right}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{padding:10px 8px;text-align:right;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.4px}
+  th:first-child,td:first-child{text-align:left}
+  .sleeveName{font-weight:650}
+  .bar{position:relative;height:7px;border-radius:5px;background:var(--card2);width:130px;margin-top:5px}
+  .bar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:var(--accent)}
+  .bar .tick{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--txt);opacity:.7}
+  .drift.pos{color:var(--green)} .drift.neg{color:var(--red)}
+  .badge{display:inline-block;font-size:9px;padding:1px 5px;border-radius:20px;margin-left:5px;
+    font-weight:700;background:rgba(224,165,60,.16);color:var(--amber);border:1px solid rgba(224,165,60,.4)}
+  .foot{color:var(--dim);font-size:12px;margin-top:22px;line-height:1.7}
+  code{font-family:ui-monospace,monospace;background:var(--card2);padding:1px 5px;border-radius:5px}
+  /* modal */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:50;
+    padding:16px;overflow:auto}
+  .modal.on{display:flex;align-items:flex-start;justify-content:center}
+  .sheet{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:18px;max-width:620px;width:100%;margin:auto}
+  .sheet h3{margin:0 0 4px}
+  .trow{display:grid;grid-template-columns:1fr 150px 70px 30px;gap:8px;align-items:center;margin:8px 0}
+  .trow input{padding:7px 9px}
+  .suminfo{font-weight:700;padding:8px 0}
+  .suminfo.bad{color:var(--red)} .suminfo.ok{color:var(--green)}
+  .banner{background:var(--card2);border:1px dashed var(--line);border-radius:10px;
+    padding:10px 12px;color:var(--dim);font-size:13px;margin:10px 0}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap"><div class="topbar">
+    <img src="icon-192.png" class="applogo" alt="">
+    <h1>Portfolio Rebalancer</h1>
+    <button class="iconbtn" id="themeBtn" title="Theme">🌙</button>
+    <button class="iconbtn" id="editBtn" title="Edit targets">⚙︎</button>
+  </div></div>
+</header>
+
+<div class="wrap">
+  <div class="row" style="margin-top:14px">
+    <div class="stat">
+      <div class="label">Invested value</div>
+      <div class="value" id="total">—</div>
+    </div>
+    <div class="stat">
+      <div class="label">This month I invest (€)</div>
+      <input class="amt" type="number" id="contribution" step="50" min="0" inputmode="decimal">
+    </div>
+    <div class="stat">
+      <div class="label">Roll-over cash</div>
+      <div class="value" id="leftover">—</div>
+    </div>
+  </div>
+
+  <h2>Your holdings today</h2>
+  <div class="card">
+    <div class="tabs">
+      <div class="tab on" id="tabManual">Enter values</div>
+      <div class="tab" id="tabPaste">Paste from IBKR</div>
+    </div>
+
+    <div id="paneManual">
+      <div class="mrow"><div class="hd" style="text-align:left">Sleeve</div>
+        <div class="hd">Current value €</div><div class="hd">Price €/share</div></div>
+      <div id="manualRows"></div>
+    </div>
+
+    <div id="panePaste" class="hide">
+      <div class="banner">Paste your IBKR positions (from Portfolio or a Flex/Activity export — CSV or copied text).
+        It finds each ISIN and its value automatically; you can review the numbers before calculating.</div>
+      <textarea id="pasteArea" rows="7" placeholder="e.g.  UBS Core MSCI World  IE00BD4TXV59  200  110.00  22,000.00 EUR"></textarea>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="primary" id="parseBtn">Import values →</button>
+        <button class="ghost" id="clearPaste">Clear</button>
+      </div>
+      <div id="parseMsg" style="margin-top:8px;color:var(--dim);font-size:13px"></div>
+    </div>
+  </div>
+
+  <h2>Buy this month</h2>
+  <div class="buybox" id="buybox"></div>
+
+  <h2>Allocation vs target</h2>
+  <div class="card" style="padding:6px 10px">
+    <table>
+      <thead><tr><th>Sleeve</th><th>Target</th><th>Current</th><th>Drift</th><th>Value</th><th>Buy €</th><th>Shares</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <div id="unmapped"></div>
+
+  <div class="foot">
+    Everything stays <b>on this device</b> (saved in your browser) — nothing is uploaded, no account is connected.
+    The buy plan fills the most-underweight sleeves first, so contributions rebalance for you and you never sell
+    (no 26% capital-gains event). Share counts are approximate — use a limit order and confirm at IBKR.
+    For the automatic daily IBKR pull, use the local Python dashboard in the repo. Educational tool, not financial advice.
+  </div>
+</div>
+
+<!-- Edit targets modal -->
+<div class="modal" id="modal">
+  <div class="sheet">
+    <h3>Target allocation</h3>
+    <div class="banner">Set the % you want to hold in each sleeve. They must add up to 100%.</div>
+    <div class="trow"><div class="hd" style="text-align:left;color:var(--dim);font-size:10px;text-transform:uppercase">Sleeve name</div>
+      <div class="hd" style="color:var(--dim);font-size:10px;text-transform:uppercase">ISIN</div>
+      <div class="hd" style="color:var(--dim);font-size:10px;text-transform:uppercase">%</div><div></div></div>
+    <div id="editRows"></div>
+    <button class="ghost" id="addRow" style="margin-top:6px">+ Add sleeve</button>
+    <div class="suminfo" id="sumInfo"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+      <button class="ghost" id="resetTargets">Reset to default</button>
+      <button class="ghost" id="cancelEdit">Cancel</button>
+      <button class="primary" id="saveTargets">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DEFAULT_TARGETS = [
+  {sleeve:"Core World",       name:"UBS Core MSCI World",           isin:"IE00BD4TXV59", pct:35},
+  {sleeve:"Momentum",         name:"Xtrackers MSCI World Momentum", isin:"IE00BL25JP72", pct:10},
+  {sleeve:"Quality",          name:"Xtrackers MSCI World Quality",  isin:"IE00BL25JL35", pct:10},
+  {sleeve:"EM IMI",           name:"iShares Core MSCI EM IMI",      isin:"IE00BKM4GZ66", pct:10},
+  {sleeve:"Global Agg",       name:"Vanguard Global Agg EUR-H",     isin:"IE00BDBRDM35", pct:20},
+  {sleeve:"Inflation-Linked", name:"iShares € Inflation-Linked",    isin:"IE00B0M62X26", pct:5},
+  {sleeve:"Gold",             name:"Invesco Physical Gold",         isin:"IE00B579F325", pct:10},
+];
+const BAND = 5; // percentage points
+
+const store = {
+  get(k,d){ try{const v=localStorage.getItem(k); return v==null?d:JSON.parse(v);}catch(e){return d;} },
+  set(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} }
+};
+let targets   = store.get('pr_targets', DEFAULT_TARGETS);
+let holdings  = store.get('pr_holdings', {});      // isin -> {value, price}
+let contribution = store.get('pr_contribution', 1600);
+
+const eur  = n => new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n||0);
+const eur2 = n => new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(n||0);
+const pct  = n => n.toFixed(1)+'%';
+const SCALE = 40; // bar full width = 40%
+
+// ---------- buy-plan (same logic as the Python app) ----------
+function computePlan(){
+  const total = targets.reduce((s,t)=> s + (holdings[t.isin]?.value||0), 0);
+  const newTotal = total + contribution;
+  const rows = targets.map(t=>{
+    const value = holdings[t.isin]?.value||0;
+    return {...t, value, current: total? value/total*100 : 0};
+  });
+  const deficits = rows.map(r=> Math.max(0, newTotal*(r.pct/100) - r.value));
+  const sumDef = deficits.reduce((a,b)=>a+b,0);
+  const alloc = rows.map(()=>0);
+  if(contribution>0){
+    if(sumDef<=0){ rows.forEach((r,i)=> alloc[i]=contribution*(r.pct/100)); }
+    else if(contribution<=sumDef){ rows.forEach((r,i)=> alloc[i]=contribution*(deficits[i]/sumDef)); }
+    else{ const rem=contribution-sumDef; rows.forEach((r,i)=> alloc[i]=deficits[i]+rem*(r.pct/100)); }
+  }
+  let spent=0;
+  rows.forEach((r,i)=>{
+    r.drift = r.current - r.pct;
+    r.outBand = Math.abs(r.drift) > BAND;
+    r.buy = Math.round(alloc[i]*100)/100;
+    const price = holdings[r.isin]?.price;
+    if(price>0 && alloc[i]>0){ r.shares=Math.floor(alloc[i]/price); r.actual=r.shares*price; }
+    else { r.shares=null; r.actual=0; }
+    spent += r.actual;
+  });
+  rows.sort((a,b)=> a.drift-b.drift);
+  return {total, rows, leftover: contribution>0? contribution-spent : 0};
+}
+
+// ---------- render ----------
+function render(){
+  const p = computePlan();
+  document.getElementById('total').textContent = eur(p.total);
+  document.getElementById('leftover').textContent = eur2(p.leftover);
+
+  const buys = p.rows.filter(r=> r.buy>0);
+  document.getElementById('buybox').innerHTML = buys.length ? buys.map(b=>`
+    <div class="buyrow">
+      <div><div class="nm">${b.sleeve} <span style="color:var(--dim);font-weight:400">· ${b.name}</span></div>
+        <div class="isin">${b.isin}</div></div>
+      <div><div class="eur">${eur2(b.buy)}</div>
+        <div class="sh">${b.shares!=null? '≈ '+b.shares+' shares' : 'add price for shares'}</div></div>
+    </div>`).join('')
+    : `<div class="buyrow"><div class="nm">Enter your holdings and an amount to see the plan.</div></div>`;
+
+  document.getElementById('tbody').innerHTML = p.rows.map(r=>{
+    const cls=r.drift>=0?'pos':'neg', sign=r.drift>=0?'+':'';
+    const fill=Math.min(100, r.current/SCALE*100), tick=Math.min(100, r.pct/SCALE*100);
+    return `<tr>
+      <td><div class="sleeveName">${r.sleeve}</div>
+        <div class="bar"><div class="fill" style="width:${fill}%"></div><div class="tick" style="left:${tick}%"></div></div></td>
+      <td>${pct(r.pct)}</td>
+      <td>${pct(r.current)}${r.outBand?'<span class="badge">±'+BAND+'pp</span>':''}</td>
+      <td class="drift ${cls}">${sign}${pct(r.drift)}</td>
+      <td>${eur(r.value)}</td>
+      <td>${r.buy>0?eur2(r.buy):'—'}</td>
+      <td>${r.shares!=null&&r.shares>0? r.shares : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  // unmapped (from paste): ISINs not in targets
+  const extra = Object.keys(holdings).filter(i=> !targets.some(t=>t.isin===i) && holdings[i].value>0);
+  document.getElementById('unmapped').innerHTML = extra.length
+    ? '<h2>Other holdings (not in your target)</h2><div class="card" style="color:var(--dim);font-size:13px">'+
+      extra.map(i=>`<span class="isin">${i}</span> — ${eur(holdings[i].value)}`).join('<br>')+
+      '<br><br>Excluded from the % and buy plan. Add them in ⚙︎ if you want them tracked.</div>'
+    : '';
+}
+
+function renderManual(){
+  document.getElementById('manualRows').innerHTML = targets.map(t=>`
+    <div class="mrow">
+      <div class="nm">${t.sleeve}<small>${t.isin}</small></div>
+      <input type="number" inputmode="decimal" data-v="${t.isin}" placeholder="0" value="${holdings[t.isin]?.value??''}">
+      <input type="number" inputmode="decimal" data-p="${t.isin}" placeholder="opt." value="${holdings[t.isin]?.price??''}">
+    </div>`).join('');
+  document.querySelectorAll('[data-v]').forEach(el=> el.addEventListener('input',e=>{
+    const i=e.target.dataset.v, v=parseFloat(e.target.value);
+    holdings[i]=holdings[i]||{}; holdings[i].value=isNaN(v)?0:v; save(); render();
+  }));
+  document.querySelectorAll('[data-p]').forEach(el=> el.addEventListener('input',e=>{
+    const i=e.target.dataset.p, v=parseFloat(e.target.value);
+    holdings[i]=holdings[i]||{}; holdings[i].price=isNaN(v)?undefined:v; save(); render();
+  }));
+}
+
+function save(){ store.set('pr_targets',targets); store.set('pr_holdings',holdings); store.set('pr_contribution',contribution); }
+
+// ---------- paste parsing ----------
+function normNum(tok){
+  const hasC=tok.includes(','), hasD=tok.includes('.');
+  if(hasC&&hasD){ tok = tok.lastIndexOf(',')>tok.lastIndexOf('.') ? tok.replace(/\./g,'').replace(',','.') : tok.replace(/,/g,''); }
+  else if(hasC){ const p=tok.split(','); tok = (p.length===2&&p[1].length===2)? tok.replace(',','.') : tok.replace(/,/g,''); }
+  return tok;
+}
+function numbersIn(s){
+  const out=[]; const re=/-?\d[\d.,]*\d|-?\d/g; let m;
+  while((m=re.exec(s))){ const v=parseFloat(normNum(m[0])); if(!isNaN(v)) out.push(v); }
+  return out;
+}
+function parsePaste(text){
+  const isinRe=/\b([A-Z]{2}[A-Z0-9]{9}\d)\b/;
+  let found=0;
+  text.split(/\r?\n/).forEach(line=>{
+    const m=line.match(isinRe); if(!m) return;
+    const isin=m[1];
+    const nums=numbersIn(line.replace(isin,' ')).filter(n=>Math.abs(n)>=1);
+    if(!nums.length) return;
+    const value=Math.max(...nums.map(Math.abs));   // market value = largest number on the line
+    holdings[isin]=holdings[isin]||{}; holdings[isin].value=value; found++;
+  });
+  return found;
+}
+
+// ---------- tabs ----------
+function showTab(which){
+  const m=which==='manual';
+  document.getElementById('tabManual').classList.toggle('on',m);
+  document.getElementById('tabPaste').classList.toggle('on',!m);
+  document.getElementById('paneManual').classList.toggle('hide',!m);
+  document.getElementById('panePaste').classList.toggle('hide',m);
+}
+document.getElementById('tabManual').onclick=()=>showTab('manual');
+document.getElementById('tabPaste').onclick=()=>showTab('paste');
+document.getElementById('clearPaste').onclick=()=>{document.getElementById('pasteArea').value='';document.getElementById('parseMsg').textContent='';};
+document.getElementById('parseBtn').onclick=()=>{
+  const n=parsePaste(document.getElementById('pasteArea').value);
+  save(); renderManual(); render();
+  document.getElementById('parseMsg').innerHTML = n? `Imported <b>${n}</b> position(s). Switch to “Enter values” to review, then adjust if needed.` : 'No ISINs found — check the pasted text, or use “Enter values”.';
+};
+
+// ---------- contribution ----------
+const ci=document.getElementById('contribution'); ci.value=contribution;
+ci.addEventListener('input',e=>{ const v=parseFloat(e.target.value); contribution=isNaN(v)?0:v; save(); render(); });
+
+// ---------- theme ----------
+function applyThemeBtn(){ document.getElementById('themeBtn').textContent =
+  (document.documentElement.getAttribute('data-theme')==='light')?'☀️':'🌙'; }
+document.getElementById('themeBtn').onclick=()=>{
+  const cur=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';
+  document.documentElement.setAttribute('data-theme',cur); localStorage.setItem('pr_theme',cur); applyThemeBtn();
+};
+applyThemeBtn();
+
+// ---------- edit targets modal ----------
+let draft=[];
+function openEdit(){ draft=JSON.parse(JSON.stringify(targets)); renderEdit(); document.getElementById('modal').classList.add('on'); }
+function closeEdit(){ document.getElementById('modal').classList.remove('on'); }
+function renderEdit(){
+  document.getElementById('editRows').innerHTML = draft.map((t,i)=>`
+    <div class="trow">
+      <input data-f="sleeve" data-i="${i}" value="${t.sleeve}" placeholder="Sleeve">
+      <input data-f="isin" data-i="${i}" value="${t.isin}" placeholder="ISIN">
+      <input data-f="pct" data-i="${i}" type="number" value="${t.pct}" placeholder="%">
+      <button class="iconbtn" data-del="${i}" title="Remove">✕</button>
+    </div>`).join('');
+  document.querySelectorAll('#editRows [data-f]').forEach(el=>el.addEventListener('input',e=>{
+    const i=+e.target.dataset.i, f=e.target.dataset.f;
+    draft[i][f] = f==='pct'? (parseFloat(e.target.value)||0) : e.target.value;
+    if(f==='sleeve') draft[i].name=draft[i].name||e.target.value;
+    updateSum();
+  }));
+  document.querySelectorAll('#editRows [data-del]').forEach(el=>el.onclick=e=>{
+    draft.splice(+e.target.dataset.del,1); renderEdit();
+  });
+  updateSum();
+}
+function updateSum(){
+  const s=draft.reduce((a,t)=>a+(+t.pct||0),0);
+  const el=document.getElementById('sumInfo');
+  el.textContent=`Total: ${s.toFixed(0)}%  ${Math.abs(s-100)<0.01?'✓':'(must be 100%)'}`;
+  el.className='suminfo '+(Math.abs(s-100)<0.01?'ok':'bad');
+}
+document.getElementById('editBtn').onclick=openEdit;
+document.getElementById('cancelEdit').onclick=closeEdit;
+document.getElementById('addRow').onclick=()=>{ draft.push({sleeve:'New',name:'New',isin:'',pct:0}); renderEdit(); };
+document.getElementById('resetTargets').onclick=()=>{ draft=JSON.parse(JSON.stringify(DEFAULT_TARGETS)); renderEdit(); };
+document.getElementById('saveTargets').onclick=()=>{
+  const s=draft.reduce((a,t)=>a+(+t.pct||0),0);
+  if(Math.abs(s-100)>0.01){ alert('Targets must add up to 100%. Currently '+s.toFixed(0)+'%.'); return; }
+  targets=draft.filter(t=>t.isin); save(); renderManual(); render(); closeEdit();
+};
+document.getElementById('modal').addEventListener('click',e=>{ if(e.target.id==='modal') closeEdit(); });
+
+// ---------- boot ----------
+renderManual(); render();
+
+// service worker
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+</script>
+</body>
+</html>

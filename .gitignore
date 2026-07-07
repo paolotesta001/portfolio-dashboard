@@ -1,0 +1,13 @@
+# Never commit your IBKR token or your positions
+local-ibkr/config.json
+local-ibkr/cache.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+Thumbs.db
+.DS_Store
