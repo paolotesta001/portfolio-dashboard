@@ -31,12 +31,15 @@
     padding:0 max(16px,env(safe-area-inset-left)) 64px max(16px,env(safe-area-inset-right))}
   header{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line);
     padding-top:env(safe-area-inset-top)}
-  .topbar{display:flex;align-items:center;gap:11px;padding:12px 0}
+  .topbar{display:flex;align-items:center;gap:11px;padding:12px 0 8px}
   .applogo{width:34px;height:34px;border-radius:9px;flex-shrink:0}
   .topbar h1{font-size:19px;margin:0;flex:1;font-weight:750;letter-spacing:-.3px}
   .iconbtn{background:none;border:1px solid var(--line);color:var(--dim);font-size:16px;
     cursor:pointer;padding:6px 9px;border-radius:9px;line-height:1}
   .iconbtn:hover{background:var(--card2)}
+  .pfbar{display:flex;gap:8px;padding:0 0 12px}
+  select#pfSelect{flex:1;background:var(--card2);border:1px solid var(--line);color:var(--txt);
+    border-radius:9px;padding:9px 11px;font-size:15px;font-weight:650;font-family:inherit}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 16px;margin:14px 0}
   h2{font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim);margin:20px 2px 8px}
   .row{display:flex;gap:12px;flex-wrap:wrap}
@@ -44,7 +47,7 @@
     border-radius:12px;padding:13px 15px}
   .stat .label{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
   .stat .value{font-size:23px;font-weight:700;margin-top:3px}
-  input,textarea{background:var(--card2);border:1px solid var(--line);color:var(--txt);
+  input,textarea,select{background:var(--card2);border:1px solid var(--line);color:var(--txt);
     border-radius:9px;padding:9px 11px;font-size:15px;font-family:inherit;width:100%}
   input:focus,textarea:focus{outline:none;border-color:var(--accent)}
   input.amt{font-size:22px;font-weight:700;padding:6px 10px}
@@ -62,6 +65,8 @@
     padding:10px 15px;font-weight:700;cursor:pointer;font-size:14px}
   button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);
     border-radius:9px;padding:9px 13px;font-weight:600;cursor:pointer;font-size:13px}
+  button.danger{color:var(--red);border-color:rgba(229,105,95,.4)}
+  button:disabled{opacity:.4;cursor:default}
   .buybox{background:linear-gradient(180deg,#16241c,#141a17);border:1px solid #244634;border-radius:12px}
   :root[data-theme="light"] .buybox{background:linear-gradient(180deg,#eafaf0,#f4fbf6);border-color:#bfe6cf}
   .buyrow{display:flex;align-items:center;justify-content:space-between;padding:12px 15px;border-bottom:1px solid rgba(128,128,128,.15)}
@@ -83,30 +88,34 @@
     font-weight:700;background:rgba(224,165,60,.16);color:var(--amber);border:1px solid rgba(224,165,60,.4)}
   .foot{color:var(--dim);font-size:12px;margin-top:22px;line-height:1.7}
   code{font-family:ui-monospace,monospace;background:var(--card2);padding:1px 5px;border-radius:5px}
-  /* modal */
-  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:50;
-    padding:16px;overflow:auto}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:50;padding:16px;overflow:auto}
   .modal.on{display:flex;align-items:flex-start;justify-content:center}
   .sheet{background:var(--card);border:1px solid var(--line);border-radius:14px;
-    padding:18px;max-width:620px;width:100%;margin:auto}
-  .sheet h3{margin:0 0 4px}
-  .trow{display:grid;grid-template-columns:1fr 150px 70px 30px;gap:8px;align-items:center;margin:8px 0}
+    padding:18px;max-width:640px;width:100%;margin:auto}
+  .sheet h3{margin:0 0 10px}
+  .trow{display:grid;grid-template-columns:1fr 150px 66px 30px;gap:8px;align-items:center;margin:8px 0}
   .trow input{padding:7px 9px}
   .suminfo{font-weight:700;padding:8px 0}
   .suminfo.bad{color:var(--red)} .suminfo.ok{color:var(--green)}
   .banner{background:var(--card2);border:1px dashed var(--line);border-radius:10px;
     padding:10px 12px;color:var(--dim);font-size:13px;margin:10px 0}
+  .fieldlab{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin:4px 0}
   .hide{display:none}
 </style>
 </head>
 <body>
 <header>
-  <div class="wrap"><div class="topbar">
-    <img src="icon-192.png" class="applogo" alt="">
-    <h1>Portfolio Rebalancer</h1>
-    <button class="iconbtn" id="themeBtn" title="Theme">🌙</button>
-    <button class="iconbtn" id="editBtn" title="Edit targets">⚙︎</button>
-  </div></div>
+  <div class="wrap">
+    <div class="topbar">
+      <img src="icon-192.png" class="applogo" alt="">
+      <h1>Portfolio Rebalancer</h1>
+      <button class="iconbtn" id="themeBtn" title="Theme">🌙</button>
+      <button class="iconbtn" id="editBtn" title="Edit this portfolio">⚙︎</button>
+    </div>
+    <div class="pfbar">
+      <select id="pfSelect" title="Switch portfolio"></select>
+    </div>
+  </div>
 </header>
 
 <div class="wrap">
@@ -131,16 +140,14 @@
       <div class="tab on" id="tabManual">Enter values</div>
       <div class="tab" id="tabPaste">Paste from IBKR</div>
     </div>
-
     <div id="paneManual">
-      <div class="mrow"><div class="hd" style="text-align:left">Sleeve</div>
+      <div class="mrow"><div class="hd" style="text-align:left">Instrument</div>
         <div class="hd">Current value €</div><div class="hd">Price €/share</div></div>
       <div id="manualRows"></div>
     </div>
-
     <div id="panePaste" class="hide">
-      <div class="banner">Paste your IBKR positions (from Portfolio or a Flex/Activity export — CSV or copied text).
-        It finds each ISIN and its value automatically; you can review the numbers before calculating.</div>
+      <div class="banner">Paste your IBKR positions (Portfolio view or a Flex/Activity export — CSV or copied text).
+        It finds each ISIN and its value automatically; review before calculating.</div>
       <textarea id="pasteArea" rows="7" placeholder="e.g.  UBS Core MSCI World  IE00BD4TXV59  200  110.00  22,000.00 EUR"></textarea>
       <div style="margin-top:10px;display:flex;gap:8px">
         <button class="primary" id="parseBtn">Import values →</button>
@@ -156,33 +163,38 @@
   <h2>Allocation vs target</h2>
   <div class="card" style="padding:6px 10px">
     <table>
-      <thead><tr><th>Sleeve</th><th>Target</th><th>Current</th><th>Drift</th><th>Value</th><th>Buy €</th><th>Shares</th></tr></thead>
+      <thead><tr><th>Instrument</th><th>Target</th><th>Current</th><th>Drift</th><th>Value</th><th>Buy €</th><th>Shares</th></tr></thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
   <div id="unmapped"></div>
 
   <div class="foot">
-    Everything stays <b>on this device</b> (saved in your browser) — nothing is uploaded, no account is connected.
-    The buy plan fills the most-underweight sleeves first, so contributions rebalance for you and you never sell
-    (no 26% capital-gains event). Share counts are approximate — use a limit order and confirm at IBKR.
-    For the automatic daily IBKR pull, use the local Python dashboard in the repo. Educational tool, not financial advice.
+    Create as many portfolios as you like (⚙︎ to edit, the dropdown to switch) — ETFs, stocks, any mix and
+    percentages. Everything stays <b>on this device</b>; nothing is uploaded, no account is connected.
+    Whatever the config, the plan is the same idea: fill the most-underweight positions first, so contributions
+    rebalance for you and you never sell. Share counts are approximate — use a limit order and confirm at IBKR.
+    Educational tool, not financial advice.
   </div>
 </div>
 
-<!-- Edit targets modal -->
+<!-- Edit portfolio modal -->
 <div class="modal" id="modal">
   <div class="sheet">
-    <h3>Target allocation</h3>
-    <div class="banner">Set the % you want to hold in each sleeve. They must add up to 100%.</div>
-    <div class="trow"><div class="hd" style="text-align:left;color:var(--dim);font-size:10px;text-transform:uppercase">Sleeve name</div>
-      <div class="hd" style="color:var(--dim);font-size:10px;text-transform:uppercase">ISIN</div>
+    <h3 id="modalTitle">Edit portfolio</h3>
+    <div class="fieldlab">Portfolio name</div>
+    <input id="editName" placeholder="e.g. All-Weather 65/35">
+    <div class="fieldlab" style="margin-top:12px">Target allocation — must add up to 100%</div>
+    <div class="trow"><div class="hd" style="text-align:left;color:var(--dim);font-size:10px;text-transform:uppercase">Label</div>
+      <div class="hd" style="color:var(--dim);font-size:10px;text-transform:uppercase">ISIN / ticker</div>
       <div class="hd" style="color:var(--dim);font-size:10px;text-transform:uppercase">%</div><div></div></div>
     <div id="editRows"></div>
-    <button class="ghost" id="addRow" style="margin-top:6px">+ Add sleeve</button>
+    <button class="ghost" id="addRow" style="margin-top:6px">+ Add instrument</button>
     <div class="suminfo" id="sumInfo"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
-      <button class="ghost" id="resetTargets">Reset to default</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+      <button class="ghost" id="dupPf">⧉ Duplicate</button>
+      <button class="ghost danger" id="delPf">🗑 Delete</button>
+      <span style="flex:1"></span>
       <button class="ghost" id="cancelEdit">Cancel</button>
       <button class="primary" id="saveTargets">Save</button>
     </div>
@@ -199,49 +211,65 @@ const DEFAULT_TARGETS = [
   {sleeve:"Inflation-Linked", name:"iShares € Inflation-Linked",    isin:"IE00B0M62X26", pct:5},
   {sleeve:"Gold",             name:"Invesco Physical Gold",         isin:"IE00B579F325", pct:10},
 ];
-const BAND = 5; // percentage points
-
+const BAND = 5;
 const store = {
   get(k,d){ try{const v=localStorage.getItem(k); return v==null?d:JSON.parse(v);}catch(e){return d;} },
   set(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} }
 };
-let targets   = store.get('pr_targets', DEFAULT_TARGETS);
-let holdings  = store.get('pr_holdings', {});      // isin -> {value, price}
-let contribution = store.get('pr_contribution', 1600);
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid = () => 'p'+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4);
+
+// ---------- state: many portfolios, one active ----------
+function loadState(){
+  const s = store.get('pr_state', null);
+  if(s && Array.isArray(s.portfolios) && s.portfolios.length) return s;
+  // migrate from the old single-config keys (or defaults) so nothing is lost
+  const id = uid();
+  return { active:id, portfolios:[{
+    id, name:'All-Weather 65/35',
+    targets: store.get('pr_targets', DEFAULT_TARGETS),
+    holdings: store.get('pr_holdings', {}),
+    contribution: store.get('pr_contribution', 1600)
+  }]};
+}
+let state = loadState();
+function saveState(){ store.set('pr_state', state); }
+function active(){ return state.portfolios.find(p=>p.id===state.active) || state.portfolios[0]; }
 
 const eur  = n => new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n||0);
 const eur2 = n => new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(n||0);
 const pct  = n => n.toFixed(1)+'%';
-const SCALE = 40; // bar full width = 40%
+const SCALE = 40;
 
-// ---------- buy-plan (same logic as the Python app) ----------
+// ---------- buy-plan (fill most-underweight first, never sell) ----------
 function computePlan(){
-  const total = targets.reduce((s,t)=> s + (holdings[t.isin]?.value||0), 0);
-  const newTotal = total + contribution;
-  const rows = targets.map(t=>{
-    const value = holdings[t.isin]?.value||0;
+  const pf = active();
+  const total = pf.targets.reduce((s,t)=> s + (pf.holdings[t.isin]?.value||0), 0);
+  const newTotal = total + (pf.contribution||0);
+  const rows = pf.targets.map(t=>{
+    const value = pf.holdings[t.isin]?.value||0;
     return {...t, value, current: total? value/total*100 : 0};
   });
   const deficits = rows.map(r=> Math.max(0, newTotal*(r.pct/100) - r.value));
   const sumDef = deficits.reduce((a,b)=>a+b,0);
   const alloc = rows.map(()=>0);
-  if(contribution>0){
-    if(sumDef<=0){ rows.forEach((r,i)=> alloc[i]=contribution*(r.pct/100)); }
-    else if(contribution<=sumDef){ rows.forEach((r,i)=> alloc[i]=contribution*(deficits[i]/sumDef)); }
-    else{ const rem=contribution-sumDef; rows.forEach((r,i)=> alloc[i]=deficits[i]+rem*(r.pct/100)); }
+  const c = pf.contribution||0;
+  if(c>0){
+    if(sumDef<=0){ rows.forEach((r,i)=> alloc[i]=c*(r.pct/100)); }
+    else if(c<=sumDef){ rows.forEach((r,i)=> alloc[i]=c*(deficits[i]/sumDef)); }
+    else{ const rem=c-sumDef; rows.forEach((r,i)=> alloc[i]=deficits[i]+rem*(r.pct/100)); }
   }
   let spent=0;
   rows.forEach((r,i)=>{
-    r.drift = r.current - r.pct;
-    r.outBand = Math.abs(r.drift) > BAND;
-    r.buy = Math.round(alloc[i]*100)/100;
-    const price = holdings[r.isin]?.price;
+    r.drift=r.current-r.pct; r.outBand=Math.abs(r.drift)>BAND;
+    r.buy=Math.round(alloc[i]*100)/100;
+    const price=pf.holdings[r.isin]?.price;
     if(price>0 && alloc[i]>0){ r.shares=Math.floor(alloc[i]/price); r.actual=r.shares*price; }
     else { r.shares=null; r.actual=0; }
-    spent += r.actual;
+    spent+=r.actual;
   });
   rows.sort((a,b)=> a.drift-b.drift);
-  return {total, rows, leftover: contribution>0? contribution-spent : 0};
+  return {total, rows, leftover: c>0? c-spent : 0};
 }
 
 // ---------- render ----------
@@ -249,22 +277,20 @@ function render(){
   const p = computePlan();
   document.getElementById('total').textContent = eur(p.total);
   document.getElementById('leftover').textContent = eur2(p.leftover);
-
   const buys = p.rows.filter(r=> r.buy>0);
   document.getElementById('buybox').innerHTML = buys.length ? buys.map(b=>`
     <div class="buyrow">
-      <div><div class="nm">${b.sleeve} <span style="color:var(--dim);font-weight:400">· ${b.name}</span></div>
-        <div class="isin">${b.isin}</div></div>
+      <div><div class="nm">${esc(b.sleeve)} <span style="color:var(--dim);font-weight:400">· ${esc(b.name)}</span></div>
+        <div class="isin">${esc(b.isin)}</div></div>
       <div><div class="eur">${eur2(b.buy)}</div>
         <div class="sh">${b.shares!=null? '≈ '+b.shares+' shares' : 'add price for shares'}</div></div>
     </div>`).join('')
     : `<div class="buyrow"><div class="nm">Enter your holdings and an amount to see the plan.</div></div>`;
-
   document.getElementById('tbody').innerHTML = p.rows.map(r=>{
     const cls=r.drift>=0?'pos':'neg', sign=r.drift>=0?'+':'';
     const fill=Math.min(100, r.current/SCALE*100), tick=Math.min(100, r.pct/SCALE*100);
     return `<tr>
-      <td><div class="sleeveName">${r.sleeve}</div>
+      <td><div class="sleeveName">${esc(r.sleeve)}</div>
         <div class="bar"><div class="fill" style="width:${fill}%"></div><div class="tick" style="left:${tick}%"></div></div></td>
       <td>${pct(r.pct)}</td>
       <td>${pct(r.current)}${r.outBand?'<span class="badge">±'+BAND+'pp</span>':''}</td>
@@ -274,34 +300,40 @@ function render(){
       <td>${r.shares!=null&&r.shares>0? r.shares : '—'}</td>
     </tr>`;
   }).join('');
-
-  // unmapped (from paste): ISINs not in targets
-  const extra = Object.keys(holdings).filter(i=> !targets.some(t=>t.isin===i) && holdings[i].value>0);
+  const pf = active();
+  const extra = Object.keys(pf.holdings).filter(i=> !pf.targets.some(t=>t.isin===i) && pf.holdings[i].value>0);
   document.getElementById('unmapped').innerHTML = extra.length
-    ? '<h2>Other holdings (not in your target)</h2><div class="card" style="color:var(--dim);font-size:13px">'+
-      extra.map(i=>`<span class="isin">${i}</span> — ${eur(holdings[i].value)}`).join('<br>')+
+    ? '<h2>Other holdings (not in this portfolio)</h2><div class="card" style="color:var(--dim);font-size:13px">'+
+      extra.map(i=>`<span class="isin">${esc(i)}</span> — ${eur(pf.holdings[i].value)}`).join('<br>')+
       '<br><br>Excluded from the % and buy plan. Add them in ⚙︎ if you want them tracked.</div>'
     : '';
 }
 
 function renderManual(){
-  document.getElementById('manualRows').innerHTML = targets.map(t=>`
+  const pf = active();
+  document.getElementById('manualRows').innerHTML = pf.targets.map(t=>`
     <div class="mrow">
-      <div class="nm">${t.sleeve}<small>${t.isin}</small></div>
-      <input type="number" inputmode="decimal" data-v="${t.isin}" placeholder="0" value="${holdings[t.isin]?.value??''}">
-      <input type="number" inputmode="decimal" data-p="${t.isin}" placeholder="opt." value="${holdings[t.isin]?.price??''}">
+      <div class="nm">${esc(t.sleeve)}<small>${esc(t.isin)}</small></div>
+      <input type="number" inputmode="decimal" data-v="${esc(t.isin)}" placeholder="0" value="${pf.holdings[t.isin]?.value??''}">
+      <input type="number" inputmode="decimal" data-p="${esc(t.isin)}" placeholder="opt." value="${pf.holdings[t.isin]?.price??''}">
     </div>`).join('');
   document.querySelectorAll('[data-v]').forEach(el=> el.addEventListener('input',e=>{
     const i=e.target.dataset.v, v=parseFloat(e.target.value);
-    holdings[i]=holdings[i]||{}; holdings[i].value=isNaN(v)?0:v; save(); render();
+    pf.holdings[i]=pf.holdings[i]||{}; pf.holdings[i].value=isNaN(v)?0:v; saveState(); render();
   }));
   document.querySelectorAll('[data-p]').forEach(el=> el.addEventListener('input',e=>{
     const i=e.target.dataset.p, v=parseFloat(e.target.value);
-    holdings[i]=holdings[i]||{}; holdings[i].price=isNaN(v)?undefined:v; save(); render();
+    pf.holdings[i]=pf.holdings[i]||{}; pf.holdings[i].price=isNaN(v)?undefined:v; saveState(); render();
   }));
 }
 
-function save(){ store.set('pr_targets',targets); store.set('pr_holdings',holdings); store.set('pr_contribution',contribution); }
+function renderPfSelect(){
+  const sel=document.getElementById('pfSelect');
+  sel.innerHTML = state.portfolios.map(p=>`<option value="${p.id}" ${p.id===state.active?'selected':''}>${esc(p.name)}</option>`).join('')
+    + `<option value="__new__">＋ New portfolio…</option>`;
+}
+function refreshAll(){ renderPfSelect(); renderManual(); render();
+  document.getElementById('contribution').value = active().contribution ?? 0; }
 
 // ---------- paste parsing ----------
 function normNum(tok){
@@ -310,21 +342,16 @@ function normNum(tok){
   else if(hasC){ const p=tok.split(','); tok = (p.length===2&&p[1].length===2)? tok.replace(',','.') : tok.replace(/,/g,''); }
   return tok;
 }
-function numbersIn(s){
-  const out=[]; const re=/-?\d[\d.,]*\d|-?\d/g; let m;
-  while((m=re.exec(s))){ const v=parseFloat(normNum(m[0])); if(!isNaN(v)) out.push(v); }
-  return out;
-}
+function numbersIn(s){ const out=[]; const re=/-?\d[\d.,]*\d|-?\d/g; let m;
+  while((m=re.exec(s))){ const v=parseFloat(normNum(m[0])); if(!isNaN(v)) out.push(v); } return out; }
 function parsePaste(text){
-  const isinRe=/\b([A-Z]{2}[A-Z0-9]{9}\d)\b/;
-  let found=0;
+  const pf=active(); const isinRe=/\b([A-Z]{2}[A-Z0-9]{9}\d)\b/; let found=0;
   text.split(/\r?\n/).forEach(line=>{
     const m=line.match(isinRe); if(!m) return;
     const isin=m[1];
     const nums=numbersIn(line.replace(isin,' ')).filter(n=>Math.abs(n)>=1);
     if(!nums.length) return;
-    const value=Math.max(...nums.map(Math.abs));   // market value = largest number on the line
-    holdings[isin]=holdings[isin]||{}; holdings[isin].value=value; found++;
+    pf.holdings[isin]=pf.holdings[isin]||{}; pf.holdings[isin].value=Math.max(...nums.map(Math.abs)); found++;
   });
   return found;
 }
@@ -342,13 +369,14 @@ document.getElementById('tabPaste').onclick=()=>showTab('paste');
 document.getElementById('clearPaste').onclick=()=>{document.getElementById('pasteArea').value='';document.getElementById('parseMsg').textContent='';};
 document.getElementById('parseBtn').onclick=()=>{
   const n=parsePaste(document.getElementById('pasteArea').value);
-  save(); renderManual(); render();
-  document.getElementById('parseMsg').innerHTML = n? `Imported <b>${n}</b> position(s). Switch to “Enter values” to review, then adjust if needed.` : 'No ISINs found — check the pasted text, or use “Enter values”.';
+  saveState(); renderManual(); render();
+  document.getElementById('parseMsg').innerHTML = n? `Imported <b>${n}</b> position(s). Switch to “Enter values” to review.` : 'No ISINs found — check the pasted text, or use “Enter values”.';
 };
 
 // ---------- contribution ----------
-const ci=document.getElementById('contribution'); ci.value=contribution;
-ci.addEventListener('input',e=>{ const v=parseFloat(e.target.value); contribution=isNaN(v)?0:v; save(); render(); });
+document.getElementById('contribution').addEventListener('input',e=>{
+  const v=parseFloat(e.target.value); active().contribution=isNaN(v)?0:v; saveState(); render();
+});
 
 // ---------- theme ----------
 function applyThemeBtn(){ document.getElementById('themeBtn').textContent =
@@ -359,22 +387,38 @@ document.getElementById('themeBtn').onclick=()=>{
 };
 applyThemeBtn();
 
-// ---------- edit targets modal ----------
-let draft=[];
-function openEdit(){ draft=JSON.parse(JSON.stringify(targets)); renderEdit(); document.getElementById('modal').classList.add('on'); }
+// ---------- portfolio switch / create ----------
+document.getElementById('pfSelect').addEventListener('change',e=>{
+  if(e.target.value==='__new__'){
+    const cur=active();
+    const p={id:uid(), name:'New portfolio', contribution:0,
+      targets:JSON.parse(JSON.stringify(cur.targets)), holdings:{}};
+    state.portfolios.push(p); state.active=p.id; saveState(); refreshAll(); openEdit();
+  }else{ state.active=e.target.value; saveState(); refreshAll(); }
+});
+
+// ---------- edit modal ----------
+let draft=[], draftName='';
+function openEdit(){
+  const pf=active();
+  draft=JSON.parse(JSON.stringify(pf.targets)); draftName=pf.name;
+  document.getElementById('editName').value=draftName;
+  document.getElementById('delPf').disabled = state.portfolios.length<=1;
+  renderEdit(); document.getElementById('modal').classList.add('on');
+}
 function closeEdit(){ document.getElementById('modal').classList.remove('on'); }
 function renderEdit(){
   document.getElementById('editRows').innerHTML = draft.map((t,i)=>`
     <div class="trow">
-      <input data-f="sleeve" data-i="${i}" value="${t.sleeve}" placeholder="Sleeve">
-      <input data-f="isin" data-i="${i}" value="${t.isin}" placeholder="ISIN">
+      <input data-f="sleeve" data-i="${i}" value="${esc(t.sleeve)}" placeholder="Label">
+      <input data-f="isin" data-i="${i}" value="${esc(t.isin)}" placeholder="ISIN / ticker">
       <input data-f="pct" data-i="${i}" type="number" value="${t.pct}" placeholder="%">
       <button class="iconbtn" data-del="${i}" title="Remove">✕</button>
     </div>`).join('');
   document.querySelectorAll('#editRows [data-f]').forEach(el=>el.addEventListener('input',e=>{
     const i=+e.target.dataset.i, f=e.target.dataset.f;
     draft[i][f] = f==='pct'? (parseFloat(e.target.value)||0) : e.target.value;
-    if(f==='sleeve') draft[i].name=draft[i].name||e.target.value;
+    if(f==='sleeve' && !draft[i].name) draft[i].name=e.target.value;
     updateSum();
   }));
   document.querySelectorAll('#editRows [data-del]').forEach(el=>el.onclick=e=>{
@@ -390,19 +434,32 @@ function updateSum(){
 }
 document.getElementById('editBtn').onclick=openEdit;
 document.getElementById('cancelEdit').onclick=closeEdit;
-document.getElementById('addRow').onclick=()=>{ draft.push({sleeve:'New',name:'New',isin:'',pct:0}); renderEdit(); };
-document.getElementById('resetTargets').onclick=()=>{ draft=JSON.parse(JSON.stringify(DEFAULT_TARGETS)); renderEdit(); };
+document.getElementById('editName').addEventListener('input',e=>{ draftName=e.target.value; });
+document.getElementById('addRow').onclick=()=>{ draft.push({sleeve:'',name:'',isin:'',pct:0}); renderEdit(); };
+document.getElementById('dupPf').onclick=()=>{
+  const cur=active();
+  const p={id:uid(), name:'Copy of '+cur.name, contribution:cur.contribution,
+    targets:JSON.parse(JSON.stringify(draft)), holdings:JSON.parse(JSON.stringify(cur.holdings))};
+  state.portfolios.push(p); state.active=p.id; saveState(); refreshAll(); openEdit();
+};
+document.getElementById('delPf').onclick=()=>{
+  if(state.portfolios.length<=1) return;
+  if(!confirm('Delete “'+active().name+'”? This cannot be undone.')) return;
+  state.portfolios = state.portfolios.filter(p=>p.id!==state.active);
+  state.active = state.portfolios[0].id; saveState(); refreshAll(); closeEdit();
+};
 document.getElementById('saveTargets').onclick=()=>{
-  const s=draft.reduce((a,t)=>a+(+t.pct||0),0);
+  const clean=draft.filter(t=>t.isin || t.sleeve);
+  const s=clean.reduce((a,t)=>a+(+t.pct||0),0);
   if(Math.abs(s-100)>0.01){ alert('Targets must add up to 100%. Currently '+s.toFixed(0)+'%.'); return; }
-  targets=draft.filter(t=>t.isin); save(); renderManual(); render(); closeEdit();
+  clean.forEach(t=>{ if(!t.name) t.name=t.sleeve; });
+  const pf=active(); pf.targets=clean; pf.name=(draftName||'Untitled').trim();
+  saveState(); refreshAll(); closeEdit();
 };
 document.getElementById('modal').addEventListener('click',e=>{ if(e.target.id==='modal') closeEdit(); });
 
 // ---------- boot ----------
-renderManual(); render();
-
-// service worker
+refreshAll();
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 </script>
 </body>
