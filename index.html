@@ -126,9 +126,25 @@
   .banner{background:var(--card2);border:1px dashed var(--line);border-radius:11px;padding:11px 13px;color:var(--dim);font-size:13px;margin:10px 0}
   .fieldlab{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin:4px 0}
   .hide{display:none}
+  .welcome{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;padding:32px max(24px,env(safe-area-inset-left))}
+  .welcome-logo{width:88px;height:88px;border-radius:22px;margin-bottom:22px}
+  .welcome h1{font-size:23px;margin:0 0 10px;font-weight:800;letter-spacing:-.3px}
+  .welcome p{color:var(--dim);font-size:14.5px;line-height:1.6;max-width:320px;margin:0 0 30px}
+  .welcome button.primary{padding:14px 40px;font-size:15px}
+  .welcome-version{color:var(--dim);font-size:12px;margin-top:16px;letter-spacing:.3px}
 </style>
 </head>
 <body>
+
+<div class="welcome" id="welcomeScreen">
+  <img src="icon-192.png" class="welcome-logo" alt="">
+  <h1>Portfolio Rebalancer</h1>
+  <p>Track your ETF portfolio, see what to buy each month to stay on target, and project where it's headed.</p>
+  <button class="primary" id="welcomeBtn">Get started</button>
+  <div class="welcome-version" id="welcomeVersion"></div>
+</div>
+
 <header>
   <div class="topbar">
     <img src="icon-192.png" class="applogo" alt="">
@@ -188,19 +204,30 @@
   <!-- ============ PERFORMANCE ============ -->
   <section id="tab-perf" class="hide">
     <div class="row" style="margin-top:14px">
-      <div class="stat"><div class="label">Invested (cost)</div><div class="value sm" id="pfInvested">—</div></div>
+      <div class="stat"><div class="label">Total invested</div><div class="value sm" id="pfInvested">—</div></div>
       <div class="stat"><div class="label">Current value</div><div class="value sm" id="pfValue">—</div></div>
       <div class="stat"><div class="label">Total return</div><div class="value sm" id="pfReturn">—</div></div>
     </div>
 
-    <h2>Return since you bought — per instrument</h2>
+    <h2>Log your deposits</h2>
+    <div class="card">
+      <div class="help" style="margin:0 0 10px">Log every euro you add, whenever you add it. Total return above = current value − everything you've deposited, so new money never gets counted as gain.</div>
+      <div class="trow" style="grid-template-columns:128px 1fr 68px">
+        <input type="date" id="depDate">
+        <input type="number" id="depAmount" placeholder="Amount €" step="50" min="0" inputmode="decimal">
+        <button class="primary" id="depAdd">Add</button>
+      </div>
+      <div id="depList" style="margin-top:6px"></div>
+    </div>
+
+    <h2>Return since you bought — per instrument (optional)</h2>
     <div class="card" style="padding:4px 12px">
       <div class="tablewrap"><table>
         <thead><tr><th>Instrument</th><th>Cost €</th><th>Value €</th><th>Gain €</th><th>Gain %</th></tr></thead>
         <tbody id="perfBody"></tbody>
       </table></div>
     </div>
-    <div class="help">Enter what you <b>paid</b> (cost) for each — total or per share × shares. This is your <b>real</b> return to date. Leave blank to skip an instrument.</div>
+    <div class="help">Optional per-instrument detail — enter what you <b>paid</b> for each to see its individual gain. It doesn't feed the <b>Total return</b> above; that comes from your logged deposits.</div>
 
     <h2>Drawdown since you started using the app</h2>
     <div class="card">
@@ -222,6 +249,13 @@
     <input class="amt" type="number" id="predMonthly" step="50" min="0" inputmode="decimal" style="max-width:220px">
     <label class="help" style="display:flex;align-items:center;gap:8px;margin-top:10px">
       <input type="checkbox" id="predInitial" style="width:auto" checked> Start from my current invested value</label>
+
+    <h2>One-time additions</h2>
+    <div class="card">
+      <div class="help" style="margin:0 0 10px">Extra lump sums on top of your monthly investment — e.g. a bonus, inheritance, or property sale.</div>
+      <div id="lumpRows"></div>
+      <button class="ghost" id="addLump" style="margin-top:6px">+ Add one-time addition</button>
+    </div>
 
     <h2>Projection</h2>
     <div class="row">
@@ -306,6 +340,7 @@
 </div>
 
 <script>
+const APP_VERSION = '1.0.0';
 const DEFAULT_TARGETS = [
   {sleeve:"Core World",       name:"UBS Core MSCI World",           isin:"IE00BD4TXV59", pct:35},
   {sleeve:"Momentum",         name:"Xtrackers MSCI World Momentum", isin:"IE00BL25JP72", pct:10},
@@ -343,7 +378,8 @@ let state = loadState();
 function saveState(){ store.set('pr_state', state); }
 function active(){ return state.portfolios.find(p=>p.id===state.active) || state.portfolios[0]; }
 
-const PRED = store.get('pr_pred', {years:20, monthly:null, initial:true, rho:0.4});
+const PRED = store.get('pr_pred', {years:20, monthly:null, initial:true, rho:0.4, lumps:[]});
+PRED.lumps = PRED.lumps || [];
 function savePred(){ store.set('pr_pred', PRED); }
 
 // ---------- expected-return / vol assumptions ----------
@@ -425,14 +461,27 @@ function renderPfSelect(){
 }
 
 // ---------- performance ----------
+function contribTotal(pf){ return (pf.contributions||[]).reduce((s,c)=>s+(c.amount||0),0); }
+function renderDeposits(){
+  const pf=active(); pf.contributions=pf.contributions||[];
+  const list=[...pf.contributions].sort((a,b)=>a.date<b.date?1:(a.date>b.date?-1:0));
+  document.getElementById('depList').innerHTML = list.length ? list.map(c=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
+      <span style="color:var(--dim);font-size:13px">${esc(c.date)}</span>
+      <span style="font-weight:650">${eur2(c.amount)}</span>
+      <button class="iconbtn" data-deldep="${c.id}">✕</button>
+    </div>`).join('')
+    : '<div class="help" style="margin:0">No deposits logged yet — add your first one above.</div>';
+  document.querySelectorAll('[data-deldep]').forEach(el=>el.addEventListener('click',e=>{
+    const id=e.target.dataset.deldep; pf.contributions=pf.contributions.filter(c=>c.id!==id); saveState(); renderPerf();}));
+}
 function renderPerf(){
-  const pf=active(); let cost=0, val=0;
+  const pf=active(); pf.contributions=pf.contributions||[];
   document.getElementById('perfBody').innerHTML = pf.targets.map(t=>{
     const h=pf.holdings[t.isin]||{}; const v=h.value||0;
     return {t,v,c:h.cost};
   }).map(x=>{
     const c=x.c||0; const g=(x.v)-(c); const gp=c>0? g/c*100 : null;
-    if(x.c) { cost+=c; } val+=x.v;
     const cls=g>=0?'pos':'neg';
     return `<tr><td>${esc(x.t.sleeve)}</td>
       <td><input type="number" inputmode="decimal" data-cost="${esc(x.t.isin)}" placeholder="—" value="${x.c??''}" style="width:96px;text-align:right;padding:7px 8px;font-size:13px"></td>
@@ -442,12 +491,14 @@ function renderPerf(){
   }).join('');
   document.querySelectorAll('[data-cost]').forEach(el=>el.addEventListener('input',e=>{
     const i=e.target.dataset.cost,v=parseFloat(e.target.value); pf.holdings[i]=pf.holdings[i]||{}; pf.holdings[i].cost=isNaN(v)?undefined:v; saveState(); renderPerf();}));
-  const g=val-cost, gp=cost>0? g/cost*100:null;
-  document.getElementById('pfInvested').textContent = cost>0?eur(cost):'—';
+  const val=totalValue(pf), invested=contribTotal(pf);
+  const g=val-invested, gp=invested>0? g/invested*100:null;
+  document.getElementById('pfInvested').textContent = invested>0?eur(invested):'—';
   document.getElementById('pfValue').textContent = eur(val);
   const rEl=document.getElementById('pfReturn');
-  rEl.textContent = gp!=null? (eur(g)+' · '+pctS(gp)) : 'add cost';
+  rEl.textContent = invested>0? (eur(g)+' · '+pctS(gp)) : 'log a deposit';
   rEl.className='value sm '+(g>=0?'pos':'neg');
+  renderDeposits();
   // drawdown from snapshots
   const snaps=(pf.snapshots||[]).filter(s=>s.v>0);
   let peak=0,mdd=0,cur=0;
@@ -468,6 +519,9 @@ function runMC(){
   const monthly=PRED.monthly!=null?PRED.monthly:(pf.contribution||0);
   const initial=PRED.initial? totalValue(pf):0;
   const rho=Math.max(0,Math.min(0.95,PRED.rho||0.4));
+  const lumps=(PRED.lumps||[]).filter(l=>l.amount>0&&l.years>=0&&l.years<=years);
+  const lumpByMonth={};
+  lumps.forEach(l=>{ const m=Math.round(l.years*12); lumpByMonth[m]=(lumpByMonth[m]||0)+l.amount; });
   const w=pf.targets.map(t=>t.pct/100); const wsum=w.reduce((a,b)=>a+b,0)||1; w.forEach((x,i)=>w[i]=x/wsum);
   const A=pf.targets.map(t=>assumFor(t));
   const muM=A.map(a=>a.mu/100/12), sdM=A.map(a=>a.sd/100/Math.sqrt(12));
@@ -476,11 +530,11 @@ function runMC(){
   const finals=[], mdds=[]; const yearly=Array.from({length:years+1},()=>[]);
   const sq=Math.sqrt(rho), sq1=Math.sqrt(1-rho);
   for(let s=0;s<sims;s++){
-    let val=initial, idx=1, peak=1, mdd=0; yearly[0].push(val);
+    let val=initial+(lumpByMonth[0]||0), idx=1, peak=1, mdd=0; yearly[0].push(val);
     for(let m=0;m<months;m++){
       const Zc=gauss(); let r=0;
       for(let i=0;i<w.length;i++){ r+=w[i]*(muM[i]+sdM[i]*(sq*Zc+sq1*gauss())); }
-      val=val*(1+r)+monthly;
+      val=val*(1+r)+monthly+(lumpByMonth[m+1]||0);
       idx=idx*(1+r); if(idx>peak)peak=idx; const dd=(peak-idx)/peak; if(dd>mdd)mdd=dd; // drawdown on returns-only index
       if((m+1)%12===0) yearly[(m+1)/12].push(val);
     }
@@ -488,7 +542,10 @@ function runMC(){
   }
   finals.sort((a,b)=>a-b); mdds.sort((a,b)=>a-b);
   const band=yearly.map(col=>{col.sort((a,b)=>a-b);return{p10:percentile(col,10),p50:percentile(col,50),p90:percentile(col,90)};});
-  return {muP, invested:initial+monthly*months, initial, monthly,
+  const lumpSum=lumps.reduce((s,l)=>s+l.amount,0);
+  const investedYearly=Array.from({length:years+1},(_,y)=>
+    initial+monthly*12*y+lumps.filter(l=>l.years<=y).reduce((s,l)=>s+l.amount,0));
+  return {muP, invested:initial+monthly*months+lumpSum, initial, monthly, lumps, investedYearly,
     p10:percentile(finals,10),p50:percentile(finals,50),p90:percentile(finals,90),
     mddMed:percentile(mdds,50)*100, mddP90:percentile(mdds,90)*100, band, years};
 }
@@ -503,11 +560,34 @@ function renderPredict(){
   document.getElementById('prDd').textContent='-'+r.mddMed.toFixed(0)+'%';
   document.getElementById('prDdX').textContent='-'+r.mddP90.toFixed(0)+'%';
   const profit=r.p50-r.invested;
+  const lumpTxt = r.lumps&&r.lumps.length ? ', plus '+r.lumps.map(l=>`${eur(l.amount)} after ${l.years}y`).join(', ') : '';
   document.getElementById('predNote').innerHTML =
-    `Over <b>${r.years} years</b>, investing ${eur(r.monthly)}/month${r.initial?` from ${eur(r.initial)} today`:''}, the model expects a median <b>${eur(r.p50)}</b> `+
+    `Over <b>${r.years} years</b>, investing ${eur(r.monthly)}/month${r.initial?` from ${eur(r.initial)} today`:''}${lumpTxt}, the model expects a median <b>${eur(r.p50)}</b> `+
     `(profit ≈ ${eur(profit)} on ${eur(r.invested)} invested). Half of outcomes land between ${eur(r.p10)} and ${eur(r.p90)}. `+
     `Drawdown is peak-to-trough of the asset mix itself. Estimates from a Monte-Carlo model — not a guarantee.`;
 }
+function renderLumps(){
+  PRED.lumps=PRED.lumps||[];
+  const over=PRED.lumps.some(l=>l.years>PRED.years);
+  document.getElementById('lumpRows').innerHTML = (PRED.lumps.map((l,i)=>`
+    <div class="trow" style="grid-template-columns:1fr 1fr 34px">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="color:var(--dim);font-size:13px;white-space:nowrap">After</span>
+        <input type="number" min="0" step="1" data-lumpyear="${i}" value="${l.years}" style="text-align:center">
+        <span style="color:var(--dim);font-size:13px;white-space:nowrap">yrs</span>
+      </div>
+      <input type="number" min="0" step="100" inputmode="decimal" data-lumpamt="${i}" value="${l.amount}" placeholder="Amount €">
+      <button class="iconbtn" data-lumpdel="${i}">✕</button>
+    </div>`).join('') || '<div class="help" style="margin:0">No one-time additions yet.</div>')
+    + (over?'<div class="help" style="margin:8px 0 0">Additions beyond your selected horizon ('+PRED.years+'y) won\'t be applied until you extend it.</div>':'');
+  document.querySelectorAll('[data-lumpyear]').forEach(el=>el.addEventListener('input',e=>{
+    const i=+e.target.dataset.lumpyear; PRED.lumps[i].years=Math.max(0,parseFloat(e.target.value)||0); savePred(); renderLumps(); renderPredict();}));
+  document.querySelectorAll('[data-lumpamt]').forEach(el=>el.addEventListener('input',e=>{
+    const i=+e.target.dataset.lumpamt; PRED.lumps[i].amount=Math.max(0,parseFloat(e.target.value)||0); savePred(); renderPredict();}));
+  document.querySelectorAll('[data-lumpdel]').forEach(el=>el.addEventListener('click',e=>{
+    const i=+e.target.dataset.lumpdel; PRED.lumps.splice(i,1); savePred(); renderLumps(); renderPredict();}));
+}
+document.getElementById('addLump').onclick=()=>{ PRED.lumps=PRED.lumps||[]; PRED.lumps.push({years:1,amount:10000}); savePred(); renderLumps(); renderPredict(); };
 function renderAssumptions(){
   document.getElementById('predRho').value=PRED.rho??0.4;
   const pf=active();
@@ -545,14 +625,15 @@ function lineChart(xs,ys,w=320,h=120){
 function growthSVG(proj,w=340,h=200){
   if(!proj) return '<div class="help" style="margin:0">Open the Predict tab first.</div>';
   const pad=34, n=proj.band.length;
-  const maxV=Math.max(...proj.band.map(b=>b.p90)), minV=0;
+  const investedYearly=proj.investedYearly||[proj.initial,proj.invested];
+  const maxV=Math.max(...proj.band.map(b=>b.p90), ...investedYearly), minV=0;
   const X=i=>pad+i/(n-1)*(w-pad-8);
   const Y=v=>h-22-(v-minV)/(maxV-minV||1)*(h-22-8);
   const top=proj.band.map((b,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(b.p90).toFixed(1)}`).join(' ');
   const botR=proj.band.map((b,i)=>`${X(n-1-i).toFixed(1)} ${Y(proj.band[n-1-i].p10).toFixed(1)}`).join(' L');
   const area=`${top} L${botR} Z`;
   const med=proj.band.map((b,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(b.p50).toFixed(1)}`).join(' ');
-  const invLine=`M${X(0)} ${Y(proj.initial).toFixed(1)} L${X(n-1)} ${Y(proj.invested).toFixed(1)}`;
+  const invLine=investedYearly.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
   let ax='';
   for(let i=0;i<n;i+=Math.max(1,Math.round((n-1)/4))){ ax+=`<text x="${X(i)}" y="${h-6}" fill="var(--dim)" font-size="10" text-anchor="middle">${i}y</text>`; }
   [0,0.5,1].forEach(f=>{ const v=maxV*f; ax+=`<text x="2" y="${Y(v)+3}" fill="var(--dim)" font-size="9">${Math.round(v/1000)}k</text>`; });
@@ -588,15 +669,15 @@ function showTab(name){
   ['plan','perf','predict','charts'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hide',t!==name));
   document.querySelectorAll('#tabbar button').forEach(b=>b.classList.toggle('on',b.dataset.tab===name));
   window.scrollTo(0,0);
-  if(name==='perf') renderPerf();
-  if(name==='predict'){ document.getElementById('predMonthly').value = PRED.monthly!=null?PRED.monthly:(active().contribution||0); renderHorizon(); renderAssumptions(); renderPredict(); }
+  if(name==='perf'){ const d=document.getElementById('depDate'); if(!d.value) d.value=new Date().toISOString().slice(0,10); renderPerf(); }
+  if(name==='predict'){ document.getElementById('predMonthly').value = PRED.monthly!=null?PRED.monthly:(active().contribution||0); renderHorizon(); renderLumps(); renderAssumptions(); renderPredict(); }
   if(name==='charts') renderCharts();
 }
 document.querySelectorAll('#tabbar button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 
 function renderHorizon(){
   document.getElementById('horizonSeg').innerHTML=[5,10,15,20].map(y=>`<div class="chip ${PRED.years===y?'on':''}" data-y="${y}">${y} years</div>`).join('');
-  document.querySelectorAll('#horizonSeg .chip').forEach(el=>el.onclick=()=>{PRED.years=+el.dataset.y;savePred();renderHorizon();renderPredict();});
+  document.querySelectorAll('#horizonSeg .chip').forEach(el=>el.onclick=()=>{PRED.years=+el.dataset.y;savePred();renderHorizon();renderLumps();renderPredict();});
 }
 document.getElementById('predMonthly').addEventListener('input',e=>{const v=parseFloat(e.target.value);PRED.monthly=isNaN(v)?0:v;savePred();renderPredict();});
 document.getElementById('predInitial').addEventListener('change',e=>{PRED.initial=e.target.checked;savePred();renderPredict();});
@@ -611,6 +692,17 @@ document.getElementById('clearPaste').onclick=()=>{document.getElementById('past
 document.getElementById('parseBtn').onclick=()=>{const n=parsePaste(document.getElementById('pasteArea').value);saveState();renderManual();renderPlan();
   document.getElementById('parseMsg').innerHTML=n?`Imported <b>${n}</b> position(s). Check them under “Enter values”.`:'No ISINs found.';};
 document.getElementById('contribution').addEventListener('input',e=>{const v=parseFloat(e.target.value);active().contribution=isNaN(v)?0:v;saveState();renderPlan();});
+
+// ---------- deposit ledger ----------
+document.getElementById('depAdd').onclick=()=>{
+  const dateEl=document.getElementById('depDate'), amtEl=document.getElementById('depAmount');
+  const amount=parseFloat(amtEl.value);
+  if(!amount||amount<=0) return;
+  const date=dateEl.value||new Date().toISOString().slice(0,10);
+  const pf=active(); pf.contributions=pf.contributions||[];
+  pf.contributions.push({id:uid(),date,amount});
+  saveState(); amtEl.value=''; renderPerf();
+};
 
 // ---------- theme ----------
 function applyThemeBtn(){document.getElementById('themeBtn').textContent=(document.documentElement.getAttribute('data-theme')==='light')?'☀️':'🌙';}
@@ -663,6 +755,10 @@ document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='
   if(total>0){ const today=new Date().toISOString().slice(0,10);
     const last=pf.snapshots[pf.snapshots.length-1];
     if(!last||last.d!==today){ pf.snapshots.push({d:today,v:Math.round(total)}); if(pf.snapshots.length>400)pf.snapshots.shift(); saveState(); } } })();
+
+// ---------- welcome screen ----------
+document.getElementById('welcomeVersion').textContent = 'v'+APP_VERSION;
+document.getElementById('welcomeBtn').onclick=()=>{document.getElementById('welcomeScreen').classList.add('hide');};
 
 // ---------- boot ----------
 refreshAll();
