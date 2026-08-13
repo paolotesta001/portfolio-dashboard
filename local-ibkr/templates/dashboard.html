@@ -23,7 +23,7 @@
   .stat{flex:1;min-width:180px}
   .stat .label{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.6px}
   .stat .value{font-size:26px;font-weight:650;margin-top:4px}
-  input[type=number]{background:var(--card2);border:1px solid var(--line);color:var(--txt);
+  input[type=number],input[type=file],select{background:var(--card2);border:1px solid var(--line);color:var(--txt);
     border-radius:8px;padding:6px 10px;font-size:20px;font-weight:650;width:130px}
   button{background:var(--accent);color:#06121f;border:0;border-radius:8px;
     padding:8px 14px;font-weight:650;cursor:pointer;font-size:14px}
@@ -41,6 +41,26 @@
   .buyrow .amt{text-align:right}
   .buyrow .eur{font-size:19px;font-weight:700;color:var(--green)}
   .buyrow .sh{color:var(--dim);font-size:13px}
+  .buyrow.ticket{display:block;padding:15px 16px}
+  .ticketHead{display:flex;justify-content:space-between;gap:12px}
+  .priority{color:var(--accent);font-size:10px;text-transform:uppercase;font-weight:750;letter-spacing:.5px}
+  .ticketGrid{display:grid;grid-template-columns:minmax(145px,1.2fr) repeat(5,minmax(90px,1fr));gap:8px;margin-top:12px}
+  .metric{background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:8px 9px;min-width:0}
+  .metric .label{color:var(--dim);font-size:9px;text-transform:uppercase;display:block;white-space:nowrap}
+  .metric .val{font-size:13px;font-weight:700;display:block;white-space:nowrap}
+  .metric.primary .val{font-size:24px;color:var(--green)}
+  .metric input{width:100%;font-size:15px;margin-top:3px;text-align:right}
+  .ticketActions{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px}
+  .toggle{color:var(--dim);font-size:12px;display:flex;align-items:center;gap:7px}
+  .warn,.ticketError{font-size:12px;line-height:1.45;padding:8px 10px;border-radius:8px;margin-top:9px}
+  .warn{color:var(--amber);border:1px solid #55411f;background:#211b12}
+  .ticketError{color:#ffb4ad;border:1px solid #5a2b28;background:#201614}
+  .planError{color:#ffb4ad;padding:11px 14px;border-bottom:1px solid #5a2b28;background:#201614}
+  .upload{margin-top:12px}
+  .upload input[type=file]{width:100%;font-size:14px;font-weight:400;padding:10px}
+  .summaryGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+  .summaryGrid div{color:var(--dim);font-size:10px;text-transform:uppercase}
+  .summaryGrid b{display:block;color:var(--txt);font-size:15px;text-transform:none}
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{padding:11px 10px;text-align:right;border-bottom:1px solid var(--line)}
   th{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
@@ -60,6 +80,7 @@
   .foot{color:var(--dim);font-size:12px;margin-top:24px;line-height:1.7}
   code{font-family:ui-monospace,monospace;background:var(--card2);padding:1px 5px;border-radius:5px}
   .spin{opacity:.45;transition:opacity .2s}
+  @media(max-width:760px){.ticketGrid{grid-template-columns:repeat(3,1fr)}table{display:block;overflow-x:auto}.summaryGrid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -85,9 +106,20 @@
         <div class="value"><span id="ccy1">€</span><input type="number" id="contribution" step="50" min="0"></div>
       </div>
       <div class="card stat">
+        <div class="label">Positions to open</div>
+        <div class="value"><select id="positionCount" aria-label="Positions to open"></select></div>
+      </div>
+      <div class="card stat">
         <div class="label">Roll-over cash (rounding)</div>
         <div class="value" id="leftover">—</div>
       </div>
+    </div>
+
+    <h2>Upload report</h2>
+    <div class="card upload">
+      <div class="sub">IBKR Flex XML, Activity Statement CSV, or plain CSV. The report is previewed first; holdings are changed only after confirmation.</div>
+      <input type="file" id="reportFile" accept=".xml,.csv,text/csv,text/xml,application/xml" style="margin-top:10px">
+      <div id="importPreview"></div>
     </div>
 
     <h2>Buy this month</h2>
@@ -113,18 +145,24 @@
     Data via IBKR Flex Web Service (read-only, end-of-day). It auto-refreshes when you open this page
     and caches for the day — hit <b>↻ Refresh</b> to force a new pull.
     Buy plan fills the most-underweight sleeves first, so contributions rebalance for you and you avoid
-    selling (no 26% capital-gains event). Share counts are approximate — use a limit order and confirm at IBKR.
+    selling (no 26% capital-gains event). Whole-share orders use the live ask entered in each ticket.
     Educational tool, not financial advice.
   </div>
 </div>
 
 <script>
-const eur = n => new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
-const eur2 = n => new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(n);
+const eur = n => new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0);
+const eur2 = eur;
 const pct = n => (n*100).toFixed(1)+'%';
 const SCALE = 0.40; // bar full-width corresponds to 40% weight
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let lastContribution = null;
+let lastPositionCount = null;
+let lastData = null;
+let pendingFile = null;
+const askPrices = {};
+const skipped = new Set();
 
 async function load(opts={}){
   const content = document.getElementById('content');
@@ -133,6 +171,8 @@ async function load(opts={}){
   const params = new URLSearchParams();
   if(opts.refresh) params.set('refresh','1');
   if(lastContribution!=null) params.set('contribution', lastContribution);
+  if(lastPositionCount!=null) params.set('position_count', lastPositionCount);
+  if(skipped.size) params.set('skipped', [...skipped].join(','));
   try{
     const res = await fetch('/api/portfolio?'+params.toString());
     const data = await res.json();
@@ -148,71 +188,91 @@ async function load(opts={}){
 }
 
 function showError(m){
-  document.getElementById('content').style.display='none';
+  // Keep the upload control available so a report can initialize/recover the cache.
+  document.getElementById('content').style.display='';
   document.getElementById('error').innerHTML =
     '<div class="msg err"><b>Cannot load data.</b><br>'+m+
     '<br><br>Check your <code>config.json</code> token &amp; query id — see <code>README.md</code>.</div>';
 }
 
 function render(d){
+  lastData=d;
   document.getElementById('content').style.display='';
   document.getElementById('asof').textContent =
-    'As of '+ (d.as_of||'?') + (d.cached?' · cached':' · fresh') +
+    'As of '+ (d.as_of||'?') + (d.source==='upload'?' · uploaded report':(d.cached?' · cached':' · fresh')) +
     (d.fetched_at? ' · pulled '+d.fetched_at.replace('T',' ') : '');
   document.getElementById('total').textContent = eur(d.total_value);
-  document.getElementById('leftover').textContent = eur2(d.leftover_cash);
-
   const ci = document.getElementById('contribution');
   if(lastContribution==null){ ci.value = d.monthly_contribution; lastContribution = d.monthly_contribution; }
-
-  // Buy panel
-  const bb = document.getElementById('buybox');
-  if(!d.buy_summary.length){
-    bb.innerHTML = '<div class="buyrow"><div class="nm">Nothing to buy — set an amount above.</div></div>';
-  }else{
-    bb.innerHTML = d.buy_summary.map(b=>`
-      <div class="buyrow">
-        <div>
-          <div class="nm">${b.sleeve} <span class="sleeveTag">· ${b.name}</span></div>
-          <div class="isin">${b.isin}${b.price_base?(' · ~'+eur2(b.price_base)+'/share'):''}</div>
-        </div>
-        <div class="amt">
-          <div class="eur">${eur2(b.buy_eur)}</div>
-          <div class="sh">${b.buy_shares!=null? ('≈ '+b.buy_shares+' shares') : 'set price/held to size'}</div>
-        </div>
-      </div>`).join('');
-  }
-
-  // Table
-  const band = d.rebalance_band_pct;
-  document.getElementById('tbody').innerHTML = d.sleeves.map(s=>{
-    const dcls = s.drift>=0?'pos':'neg';
-    const sign = s.drift>=0?'+':'';
-    const fill = Math.min(100, (s.current_pct/SCALE)*100);
-    const tick = Math.min(100, (s.target_pct/SCALE)*100);
-    const badge = s.out_of_band?'<span class="badge warn">±'+(band*100)+'pp</span>':'';
-    return `<tr>
-      <td>
-        <div class="sleeveName">${s.sleeve}</div>
-        <div class="bar"><div class="fill" style="width:${fill}%"></div>
-          <div class="tick" style="left:${tick}%"></div></div>
-      </td>
-      <td>${pct(s.target_pct)}</td>
-      <td>${pct(s.current_pct)}${badge}</td>
-      <td class="drift ${dcls}">${sign}${pct(s.drift)}</td>
-      <td>${eur(s.value_base)}</td>
-      <td>${s.buy_eur>0?eur2(s.buy_eur):'—'}</td>
-      <td>${s.buy_shares!=null && s.buy_shares>0? s.buy_shares : '—'}</td>
-    </tr>`;
-  }).join('');
-
-  // Unmapped holdings note
+  if(lastPositionCount==null) lastPositionCount=d.position_count;
+  document.getElementById('positionCount').innerHTML=Array.from({length:d.available_position_count},(_,i)=>
+    `<option value="${i+1}" ${lastPositionCount===i+1?'selected':''}>${i+1} ${i?'positions':'position'}</option>`).join('');
+  renderTickets(d);renderTable(d);
   const um = document.getElementById('unmapped');
   if(d.unmapped && d.unmapped.length){
     um.innerHTML = '<h2>Other holdings (not in your target)</h2><div class="msg">'+
-      d.unmapped.map(u=>`${u.symbol||''} <span class="isin">${u.isin}</span> — ${eur(u.value_base)}`).join('<br>')+
+      d.unmapped.map(u=>`${esc(u.symbol||'')} <span class="isin">${esc(u.isin)}</span> — ${eur(u.value_base)}`).join('<br>')+
       '<br><br>These are excluded from the % and buy plan. Add them to config.json if you want them tracked.</div>';
   }else{ um.innerHTML=''; }
+}
+
+function roundUpCent(n){return Math.ceil((n-1e-9)*100)/100;}
+function ticketFor(b,d){
+  const ask=Number(askPrices[b.isin]);if(!(ask>0))return {valid:false};
+  const shares=Math.floor(b.buy_eur/ask),orderValue=Math.round(shares*ask*100)/100;
+  const limitPrice=roundUpCent(Math.max(ask*1.0005,ask+0.02)),c=d.commission;
+  const commission=orderValue>0?Math.round(Math.min(c.maximum_eur,Math.max(c.minimum_eur,orderValue*c.rate))*100)/100:0;
+  return {valid:true,shares,orderValue,limitPrice,commission,commissionPct:orderValue?commission/orderValue:0,
+    totalCost:Math.round((orderValue+commission)*100)/100,leftover:Math.max(0,b.buy_eur-orderValue)};
+}
+function copyText(text,button){
+  const done=()=>{const old=button.textContent;button.textContent='Copied';setTimeout(()=>button.textContent=old,1200);};
+  const fallback=()=>{const el=document.createElement('textarea');el.value=text;el.style.position='fixed';el.style.opacity='0';document.body.appendChild(el);el.select();try{document.execCommand('copy');done();}finally{el.remove();}};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(done).catch(fallback);else fallback();
+}
+function renderTickets(d){
+  const bb=document.getElementById('buybox'),tickets=d.buy_summary.map(b=>({b,t:ticketFor(b,d)}));
+  const missing=tickets.filter(x=>!x.t.valid),allZero=tickets.length&&tickets.every(x=>x.t.valid&&x.t.shares===0);
+  const rollover=lastContribution<=0?0:(!tickets.length||missing.length||allZero?null:tickets.reduce((s,x)=>s+x.t.leftover,0));
+  const left=document.getElementById('leftover');left.textContent=rollover==null?'—':eur2(rollover);
+  left.title=rollover==null?'Rollover is shown only after valid live asks produce whole-share orders.':'Residual after whole-share rounding only.';
+  const error=d.allocation_error||(missing.length?`Enter a live ask for ${missing.length} selected ${missing.length===1?'position':'positions'}; missing prices are not rollover cash.`:(allZero?'No whole share fits any selected allocation. Merge with next month or change the plan.':''));
+  const skippedRows=(d.skipped||[]).map(isin=>d.sleeves.find(s=>s.isin===isin)).filter(Boolean);
+  const skippedHtml=skippedRows.length?`<div class="buyrow" style="color:var(--dim);font-size:12px">Skipped: ${skippedRows.map(s=>`${esc(s.sleeve)} <button class="ghost" data-unskip="${esc(s.isin)}">Undo</button>`).join(' · ')}</div>`:'';
+  if(!tickets.length)bb.innerHTML=(error?`<div class="planError">${esc(error)}</div>`:'')+'<div class="buyrow"><div class="nm">Nothing to buy — set an amount above or undo a skipped sleeve.</div></div>'+skippedHtml;
+  else bb.innerHTML=(error?`<div class="planError">${esc(error)}</div>`:'')+tickets.map(({b,t})=>`
+    <div class="buyrow ticket"><div class="ticketHead"><div><div class="priority">Priority #${b.priority} · most underweight</div>
+      <div class="nm">${esc(b.sleeve)} <span class="sleeveTag">· ${esc(b.name)}</span></div>
+      <div class="isin">${esc(b.ticker)}${b.exchange?' @ '+esc(b.exchange):''} · ${esc(b.isin)}</div></div>
+      <div class="amt"><div class="eur">${eur2(b.buy_eur)}</div><div class="sh">allocated</div></div></div>
+      <div class="ticketGrid">
+        <label class="metric"><span class="label">Ask price (EUR)</span><input type="number" min="0" step="0.01" data-ask="${esc(b.isin)}" value="${askPrices[b.isin]??''}" placeholder="0.00"></label>
+        <div class="metric primary"><span class="label">Shares</span><span class="val">${t.valid?t.shares:'—'}</span></div>
+        <div class="metric"><span class="label">Limit price</span><span class="val">${t.valid?eur2(t.limitPrice):'—'}</span></div>
+        <div class="metric"><span class="label">Order value</span><span class="val">${t.valid?eur2(t.orderValue):'—'}</span></div>
+        <div class="metric"><span class="label">Commission</span><span class="val">${t.valid?eur2(t.commission)+' · '+(t.commissionPct*100).toFixed(2)+'%':'—'}</span></div>
+        <div class="metric"><span class="label">Total cost</span><span class="val">${t.valid?eur2(t.totalCost):'—'}</span></div>
+      </div>
+      ${!t.valid?'<div class="ticketError">Live ask required. Missing prices are never treated as rollover cash.</div>':''}
+      ${t.valid&&t.shares===0?'<div class="warn">No whole share fits. Skip this sleeve or merge it with next month’s contribution.</div>':''}
+      ${t.valid&&t.shares>0&&t.commissionPct>d.commission.warning_pct?'<div class="warn">Commission exceeds 0.30%, so this order is too small to be cost-efficient. Consider skipping it or merging it with next month’s contribution.</div>':''}
+      <div class="ticketActions"><label class="toggle"><input type="checkbox" data-skip="${esc(b.isin)}"> Skip this month</label>
+        <button class="ghost" data-copy="${esc(b.isin)}" ${!t.valid||t.shares<1?'disabled':''}>Copy ticket</button></div></div>`).join('')+skippedHtml;
+  document.querySelectorAll('[data-ask]').forEach(el=>el.oninput=e=>{const isin=e.target.dataset.ask;askPrices[isin]=e.target.value;renderTickets(d);renderTable(d);const next=document.querySelector(`[data-ask="${CSS.escape(isin)}"]`);if(next)next.focus();});
+  document.querySelectorAll('[data-skip]').forEach(el=>el.onchange=e=>{skipped.add(e.target.dataset.skip);load();});
+  document.querySelectorAll('[data-unskip]').forEach(el=>el.onclick=e=>{skipped.delete(e.currentTarget.dataset.unskip);load();});
+  document.querySelectorAll('[data-copy]').forEach(el=>el.onclick=e=>{const b=d.buy_summary.find(x=>x.isin===e.currentTarget.dataset.copy),t=b&&ticketFor(b,d);if(t&&t.valid&&t.shares>0)copyText(`BUY ${t.shares} ${b.ticker} @ LMT ${t.limitPrice.toFixed(2)} DAY`,e.currentTarget);});
+}
+function renderTable(d){
+  const byIsin=Object.fromEntries(d.buy_summary.map(b=>[b.isin,{b,t:ticketFor(b,d)}]));
+  const band=d.rebalance_band_pct;
+  document.getElementById('tbody').innerHTML=d.sleeves.map(s=>{
+    const dcls=s.drift>=0?'pos':'neg',sign=s.drift>=0?'+':'',fill=Math.min(100,(s.current_pct/SCALE)*100),tick=Math.min(100,(s.target_pct/SCALE)*100);
+    const badge=s.out_of_band?'<span class="badge warn">±'+(band*100)+'pp</span>':'';
+    return `<tr><td><div class="sleeveName">${esc(s.sleeve)}</div><div class="bar"><div class="fill" style="width:${fill}%"></div><div class="tick" style="left:${tick}%"></div></div></td>
+      <td>${pct(s.target_pct)}</td><td>${pct(s.current_pct)}${badge}</td><td class="drift ${dcls}">${sign}${pct(s.drift)}</td><td>${eur(s.value_base)}</td>
+      <td>${s.buy_eur>0?eur2(s.buy_eur):'—'}</td><td>${byIsin[s.isin]?(byIsin[s.isin].t.valid?byIsin[s.isin].t.shares:'ask needed'):'—'}</td></tr>`;
+  }).join('');
 }
 
 // Recompute buy plan when contribution changes (no re-fetch of positions needed)
@@ -222,9 +282,30 @@ document.getElementById('contribution').addEventListener('input', e=>{
   lastContribution = isNaN(v)?0:v;
   clearTimeout(t); t=setTimeout(()=>load(), 300);
 });
+document.getElementById('positionCount').addEventListener('change',e=>{lastPositionCount=+e.target.value;load();});
 document.getElementById('refreshBtn').addEventListener('click', ()=>{
   document.getElementById('refreshBtn').disabled=true;
   load({refresh:true});
+});
+function importMessage(message,isError=false){
+  document.getElementById('importPreview').innerHTML=`<div class="${isError?'ticketError':'msg'}" style="margin-top:10px">${message}</div>`;
+}
+async function sendImport(file,confirmImport=false){
+  const form=new FormData();form.append('file',file);if(confirmImport)form.append('confirm','1');
+  const res=await fetch('/api/import',{method:'POST',body:form}),data=await res.json();
+  if(!res.ok||data.error)throw new Error(data.error||'The report could not be imported.');return data;
+}
+document.getElementById('reportFile').addEventListener('change',async e=>{
+  const file=e.target.files&&e.target.files[0];if(!file)return;pendingFile=file;importMessage('Reading report…');
+  try{const data=await sendImport(file),s=data.summary;
+    document.getElementById('importPreview').innerHTML=`<div class="msg" style="margin-top:10px"><b>Review before importing</b><div class="summaryGrid">
+      <div>Rows parsed<b>${s.rows_parsed}</b></div><div>Rows matched<b>${s.rows_matched}</b></div><div>Unmatched / Other<b>${s.rows_unmatched}</b></div>
+      <div>Rows ignored<b>${s.rows_ignored}</b></div><div>Total EUR<b>${eur2(s.total_eur)}</b></div><div>Report date<b>${esc(s.report_date)}</b></div></div>
+      ${data.warnings.length?`<div class="warn">${esc(data.warnings.slice(0,4).join(' · '))}</div>`:''}
+      <div style="display:flex;gap:8px;margin-top:10px"><button id="confirmImport">Confirm import</button><button class="ghost" id="cancelImport">Cancel</button></div></div>`;
+    document.getElementById('confirmImport').onclick=async()=>{try{await sendImport(pendingFile,true);pendingFile=null;document.getElementById('reportFile').value='';importMessage(`<b>Import complete.</b> Holdings now reflect the report dated ${esc(s.report_date)}.`);skipped.clear();Object.keys(askPrices).forEach(k=>delete askPrices[k]);load();}catch(err){importMessage(`<b>Import failed.</b> ${esc(err.message)} Existing holdings were not changed.`,true);}};
+    document.getElementById('cancelImport').onclick=()=>{pendingFile=null;document.getElementById('reportFile').value='';document.getElementById('importPreview').innerHTML='';};
+  }catch(err){pendingFile=null;importMessage(`<b>Import failed.</b> ${esc(err.message)} Existing holdings were not changed.`,true);}
 });
 
 load();

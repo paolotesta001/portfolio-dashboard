@@ -1,5 +1,5 @@
 /* Portfolio Rebalancer — service worker (offline app shell) */
-const CACHE = 'portfolio-rebalancer-v3';
+const CACHE = 'portfolio-rebalancer-v4';
 const ASSETS = [
   './',
   './index.html',

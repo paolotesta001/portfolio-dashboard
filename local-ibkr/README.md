@@ -39,7 +39,7 @@ selling (no 26% Italian capital-gains event).
 
 1. Copy `config.example.json` to `config.json`.
 2. Paste your **token** and **query_id** into the `ibkr` block.
-3. Adjust `monthly_contribution` (default 1600) and the `targets` if you ever change the plan.
+3. Adjust `monthly_contribution`, `order_ticket.max_positions`, commission settings, ticker/exchange mappings, and `targets` if needed.
 
 `config.json` and `cache.json` are git-ignored, so your token and positions never get committed.
 
@@ -58,6 +58,9 @@ python app.py
 Open **http://127.0.0.1:5000** in your browser.
 
 - Change the **"This month I invest"** amount → the buy plan updates instantly.
+- Choose how many of the most-underweight positions you want to open this month.
+- Enter the live IBKR ask in each order ticket to calculate whole shares, limit price, commission, total cost, and true rounding rollover.
+- Use **Upload report** to preview and then confirm a Flex XML or Activity/plain CSV import. Failed previews never alter `cache.json`.
 - Click **↻ Refresh** to force a new pull from IBKR (otherwise it uses today's cache).
 
 ### Optional: auto pre-fetch each morning
@@ -77,7 +80,8 @@ fetches on its own if the cache is stale.
 3. Finds how far **below** target each sleeve is (the "deficit").
 4. Allocates your contribution to cover the biggest deficits first. If the contribution is
    larger than all deficits combined, it tops everyone to target then spreads the rest by weight.
-5. Converts € amounts to whole shares (rounding down; leftover rolls to next month).
+5. Keeps only the requested number of most-underweight sleeves, then redistributes the contribution deficit-proportionally across them.
+6. Converts allocations to whole shares from the live ask you enter (always rounding down). Only the residual after that rounding is shown as rollover.
 
 It **never tells you to sell** — that's deliberate, to keep you clear of capital-gains tax.
 If a sleeve drifts more than ±5pp above target it gets a badge, but the fix is simply that new

@@ -6,6 +6,24 @@
   "base_currency": "EUR",
   "monthly_contribution": 1600,
   "rebalance_band_pct": 0.05,
+  "order_ticket": {
+    "max_positions": 2,
+    "commission": {
+      "rate": 0.0005,
+      "minimum_eur": 3.00,
+      "maximum_eur": 29.00,
+      "warning_pct": 0.003
+    },
+    "instruments": {
+      "IE00BD4TXV59": { "ticker": "UETW", "exchange": "IBIS" },
+      "IE00BL25JP72": { "ticker": "XDEM", "exchange": "IBIS2" },
+      "IE00BL25JL35": { "ticker": "XDEQ", "exchange": "IBIS2" },
+      "IE00BKM4GZ66": { "ticker": "IS3N", "exchange": "IBIS2" },
+      "IE00BDBRDM35": { "ticker": "VAGF", "exchange": "IBIS2" },
+      "IE00B0M62X26": { "ticker": "IBCI", "exchange": "AEB" },
+      "IE00B579F325": { "ticker": "8PSG", "exchange": "IBIS2" }
+    }
+  },
   "targets": [
     { "isin": "IE00BD4TXV59", "sleeve": "Core World",       "name": "UBS Core MSCI World",              "target_pct": 0.35 },
     { "isin": "IE00BL25JP72", "sleeve": "Momentum",         "name": "Xtrackers MSCI World Momentum",     "target_pct": 0.10 },
