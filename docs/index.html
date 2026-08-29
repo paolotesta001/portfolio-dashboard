@@ -47,7 +47,7 @@
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 16px;margin:12px 0}
   .row{display:flex;gap:11px;flex-wrap:wrap}
   .stat{flex:1;min-width:0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px}
-  .stat .label{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stat .label{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;line-height:1.3;overflow-wrap:anywhere}
   .stat .value{font-size:21px;font-weight:750;margin-top:3px;letter-spacing:-.3px}
   .stat .value.sm{font-size:17px}
   input,textarea,select{background:var(--card2);border:1px solid var(--line);color:var(--txt);
@@ -159,6 +159,13 @@
   .banner{background:var(--card2);border:1px dashed var(--line);border-radius:11px;padding:11px 13px;color:var(--dim);font-size:13px;margin:10px 0}
   .fieldlab{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin:4px 0}
   .hide{display:none}
+  .tradeRow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .tradeRow:last-child{border-bottom:0}
+  .tradeRow .tl{flex:1;min-width:0}
+  .tradeRow .tl b{font-size:13.5px}
+  .tradeRow .tl small{display:block;color:var(--dim);font-size:11px}
+  .tradeRow .tr{text-align:right;white-space:nowrap}
+  .srcNote{color:var(--dim);font-size:12px;margin:8px 3px 0}
   .welcome{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;padding:32px max(24px,env(safe-area-inset-left))}
   .welcome-logo{width:88px;height:88px;border-radius:22px;margin-bottom:22px}
@@ -168,11 +175,46 @@
   .welcome-version{color:var(--dim);font-size:12px;margin-top:16px;letter-spacing:.3px}
   .welcome.hide{display:none}
   @media(max-width:720px){
-    .ticketGrid{grid-template-columns:repeat(3,1fr)}
+    .ticketGrid{grid-template-columns:repeat(3,minmax(0,1fr))}
   }
-  @media(max-width:460px){
-    .ticketGrid{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:600px){
+    .wrap{padding:0 max(12px,env(safe-area-inset-left)) 24px max(12px,env(safe-area-inset-right))}
+    .row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+    .stat{padding:11px 12px}
+    .stat .value{font-size:19px}
+    .stat .value.sm{font-size:15.5px}
+    input.amt{font-size:19px;padding:6px 8px}
+    .ticketGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
     .summaryGrid{grid-template-columns:repeat(2,1fr)}
+    .tabs{gap:5px}
+    .tab{padding:9px 5px;font-size:12.5px;line-height:1.25}
+    .mhead{display:none}
+    .mrow{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 9px;padding:11px 0}
+    .mrow .nm{grid-column:1 / -1;font-size:15px}
+    .mrow .nm small{font-size:11.5px}
+    .buyrow .eur{font-size:18px}
+    .help{font-size:13px}
+    /* tables become stacked cards so nothing is cut off */
+    table.resp{min-width:0;font-size:13.5px}
+    table.resp thead{display:none}
+    table.resp tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 14px;
+      padding:11px 0;border-bottom:1px solid var(--line)}
+    table.resp tr:last-child{border-bottom:0}
+    table.resp td{border:0;padding:3px 0;display:flex;justify-content:flex-start;align-items:baseline;
+      gap:6px;white-space:normal;text-align:right}
+    table.resp td::before{content:attr(data-label);color:var(--dim);font-size:9.5px;font-weight:700;
+      text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;margin-right:auto;padding-right:8px}
+    table.resp td.full{grid-column:1 / -1;display:block;text-align:left;padding-bottom:6px}
+    table.resp td.full::before{content:none}
+    table.resp td input{max-width:120px}
+    .bar{width:100%}
+    #editRows .trow{grid-template-columns:1fr 70px 32px}
+    #editRows .trow input[data-f="sleeve"]{grid-column:1 / -1}
+    nav.tabbar button{font-size:10.5px}
+  }
+  @media(max-width:380px){
+    .tab{font-size:11.5px}
+    .stat .value{font-size:17.5px}
   }
 </style>
 </head>
@@ -215,32 +257,35 @@
         <div class="tab" id="tabUpload">Upload report</div>
       </div>
       <div id="paneManual">
-        <div class="mrow"><div class="hd" style="text-align:left">Instrument</div>
+        <div class="mrow mhead"><div class="hd" style="text-align:left">Instrument</div>
           <div class="hd">Value €</div><div class="hd">Price €</div></div>
         <div id="manualRows"></div>
       </div>
       <div id="panePaste" class="hide">
-        <div class="banner">Paste your IBKR positions (Portfolio view or a Flex/Activity export). It finds each ISIN and its value automatically.</div>
-        <textarea id="pasteArea" rows="6" placeholder="e.g.  UBS Core MSCI World  IE00BD4TXV59  200  110.00  22,000.00 EUR"></textarea>
+        <div class="banner">Paste either a <b>Trade Confirmation</b> (the Trades table: quantity, price, proceeds, commission) or a <b>positions list</b>. Trades are recognised automatically and update your cost, fees and share count.</div>
+        <textarea id="pasteArea" rows="6" placeholder="e.g.  U27770997 UETW 2026-08-13, 05:52:18 2026-08-17 - BUY 87 40.2340 -3,500.36 -3.00 0.00 LMT"></textarea>
         <div style="margin-top:10px;display:flex;gap:8px">
-          <button class="primary" id="parseBtn">Import values →</button>
+          <button class="primary" id="parseBtn">Read this →</button>
           <button class="ghost" id="clearPaste">Clear</button>
         </div>
         <div id="parseMsg" style="margin-top:8px;color:var(--dim);font-size:13px"></div>
+        <div id="pastePreview"></div>
       </div>
       <div id="paneUpload" class="hide">
-        <div class="banner">Upload an IBKR Flex Query XML, Activity Statement CSV, or plain CSV. Nothing changes until you review and confirm the import.</div>
-        <input type="file" id="reportFile" accept=".xml,.csv,text/csv,text/xml,application/xml">
+        <div class="banner">Upload an IBKR <b>Trade Confirmation PDF</b>, a Flex Query XML, or an Activity/plain CSV. Nothing changes until you review and confirm.</div>
+        <input type="file" id="reportFile" accept=".pdf,.xml,.csv,application/pdf,text/csv,text/xml,application/xml">
         <div id="importPreview"></div>
       </div>
     </div>
+
+    <div class="srcNote" id="asOfNote"></div>
 
     <h2>Buy this month</h2>
     <div class="buybox" id="buybox"></div>
 
     <h2>Allocation vs target</h2>
     <div class="card" style="padding:4px 12px">
-      <div class="tablewrap"><table>
+      <div class="tablewrap"><table class="resp">
         <thead><tr><th>Instrument</th><th>Target</th><th>Now</th><th>Drift</th><th>Value</th><th>Buy €</th><th>Shares</th></tr></thead>
         <tbody id="tbody"></tbody>
       </table></div>
@@ -255,11 +300,21 @@
       <div class="stat"><div class="label">Total invested</div><div class="value sm" id="pfInvested">—</div></div>
       <div class="stat"><div class="label">Current value</div><div class="value sm" id="pfValue">—</div></div>
       <div class="stat"><div class="label">Total return</div><div class="value sm" id="pfReturn">—</div></div>
+      <div class="stat"><div class="label">Fees &amp; commissions</div><div class="value sm" id="pfFees">—</div></div>
+    </div>
+    <div class="seg" id="investedSrc" style="margin-top:11px"></div>
+    <div class="srcNote" id="investedNote"></div>
+
+    <h2>Imported trades</h2>
+    <div class="card">
+      <div class="help" style="margin:0 0 8px">Every buy and sell read from an IBKR trade confirmation (PDF, CSV or pasted text). These set your cost basis, share counts and fees — and they update the Plan tab too.</div>
+      <div id="tradeList"></div>
+      <div id="tradeActions"></div>
     </div>
 
     <h2>Log your deposits</h2>
     <div class="card">
-      <div class="help" style="margin:0 0 10px">Log every euro you add, whenever you add it. Total return above = current value − everything you've deposited, so new money never gets counted as gain.</div>
+      <div class="help" style="margin:0 0 10px">Only needed if you are <b>not</b> importing trade confirmations. Log every euro you add, whenever you add it — new money then never gets counted as gain.</div>
       <div class="trow" style="grid-template-columns:128px 1fr 68px">
         <input type="date" id="depDate">
         <input type="number" id="depAmount" placeholder="Amount €" step="50" min="0" inputmode="decimal">
@@ -270,12 +325,12 @@
 
     <h2>Return since you bought — per instrument (optional)</h2>
     <div class="card" style="padding:4px 12px">
-      <div class="tablewrap"><table>
+      <div class="tablewrap"><table class="resp">
         <thead><tr><th>Instrument</th><th>Cost €</th><th>Value €</th><th>Gain €</th><th>Gain %</th></tr></thead>
         <tbody id="perfBody"></tbody>
       </table></div>
     </div>
-    <div class="help">Optional per-instrument detail — enter what you <b>paid</b> for each to see its individual gain. It doesn't feed the <b>Total return</b> above; that comes from your logged deposits.</div>
+    <div class="help">Cost is filled in automatically from your imported trades (purchase price + commission). Type over it if you want. It doesn't feed the <b>Total return</b> above.</div>
 
     <h2>Drawdown since you started using the app</h2>
     <div class="card">
@@ -392,7 +447,7 @@
 </div>
 
 <script>
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '2.0.0';
 const DEFAULT_TARGETS = [
   {sleeve:"Core World",       name:"UBS Core MSCI World",           isin:"IE00BD4TXV59", pct:35, ticker:"UETW", exchange:"IBIS"},
   {sleeve:"Momentum",         name:"Xtrackers MSCI World Momentum", isin:"IE00BL25JP72", pct:10, ticker:"XDEM", exchange:"IBIS2"},
@@ -435,7 +490,8 @@ function hydrateState(s){
       return {...t,ticker:t.ticker||d.ticker||'',exchange:t.exchange||d.exchange||''};
     });
     p.maxPositions=Math.max(1,Math.min(p.targets.length||1,+(p.maxPositions||DEFAULT_POSITION_COUNT)));
-    p.snapshots=p.snapshots||[]; p.contributions=p.contributions||[];
+    p.snapshots=p.snapshots||[]; p.contributions=p.contributions||[]; p.trades=p.trades||[];
+    if(p.trades.length) rebuildFromTrades(p);
   });
   return s;
 }
@@ -560,13 +616,21 @@ function renderPlan(){
     copyText(`BUY ${t.shares} ${b.ticker||b.isin} @ LMT ${t.limitPrice.toFixed(2)} DAY`,e.currentTarget);}));
   document.getElementById('tbody').innerHTML = p.rows.map(r=>{
     const cls=r.drift>=0?'pos':'neg', fill=Math.min(100,r.current/40*100), tick=Math.min(100,r.pct/40*100);
-    return `<tr><td><div class="sleeveName">${esc(r.sleeve)}</div>
+    const h=active().holdings[r.isin]||{};
+    return `<tr><td class="full"><div class="sleeveName">${esc(r.sleeve)}${h.qty?` <span style="color:var(--dim);font-weight:400">· ${(+h.qty).toLocaleString('it-IT')} sh</span>`:''}</div>
       <div class="bar"><div class="fill" style="width:${fill}%"></div><div class="tick" style="left:${tick}%"></div></div></td>
-      <td>${r.pct.toFixed(0)}%</td><td>${r.current.toFixed(1)}%${r.outBand?'<span class="badge">±'+BAND+'</span>':''}</td>
-      <td class="${cls}">${pctS(r.drift)}</td><td>${eur(r.value)}</td>
-      <td>${r.buy>0?eur2(r.buy):'—'}</td><td>${r.buy>0?(ticketFor(r).valid?ticketFor(r).shares:'ask needed'):'—'}</td></tr>`;
+      <td data-label="Target">${r.pct.toFixed(0)}%</td><td data-label="Now">${r.current.toFixed(1)}%${r.outBand?'<span class="badge">±'+BAND+'</span>':''}</td>
+      <td data-label="Drift" class="${cls}">${pctS(r.drift)}</td><td data-label="Value">${eur(r.value)}</td>
+      <td data-label="Buy €">${r.buy>0?eur2(r.buy):'—'}</td><td data-label="Shares">${r.buy>0?(ticketFor(r).valid?ticketFor(r).shares:'ask needed'):'—'}</td></tr>`;
   }).join('');
   const pf=active();
+  const noteEl=document.getElementById('asOfNote');
+  if(noteEl){
+    const nTrades=(pf.trades||[]).length;
+    noteEl.innerHTML=pf.holdingsAsOf
+      ? `Holdings as of <b>${esc(pf.holdingsAsOf)}</b> · source: ${esc(pf.holdingsSource||'manual entry')}${nTrades?` · ${nTrades} imported trade${nTrades===1?'':'s'}`:''}`
+      : 'No holdings yet — type them in, paste them, or upload an IBKR document.';
+  }
   const extra=Object.keys(pf.holdings).filter(i=>!pf.targets.some(t=>t.isin===i)&&pf.holdings[i].value>0);
   document.getElementById('unmapped').innerHTML = extra.length
     ? '<h2>Other holdings (not in this portfolio)</h2><div class="card" style="color:var(--dim);font-size:13px">'+
@@ -575,13 +639,18 @@ function renderPlan(){
 function renderManual(){
   const pf=active();
   document.getElementById('manualRows').innerHTML = pf.targets.map(t=>`
-    <div class="mrow"><div class="nm">${esc(t.sleeve)}<small>${esc(t.isin)}</small></div>
-      <input type="number" inputmode="decimal" data-v="${esc(t.isin)}" placeholder="0" value="${pf.holdings[t.isin]?.value??''}">
-      <input type="number" inputmode="decimal" data-p="${esc(t.isin)}" placeholder="opt." value="${pf.holdings[t.isin]?.price??''}"></div>`).join('');
+    <div class="mrow"><div class="nm">${esc(t.sleeve)}<small>${esc(t.isin)}${pf.holdings[t.isin]?.qty?` · ${(+pf.holdings[t.isin].qty).toLocaleString('it-IT')} shares`:''}</small></div>
+      <input type="number" inputmode="decimal" aria-label="Value in euro" data-v="${esc(t.isin)}" placeholder="Value €" value="${pf.holdings[t.isin]?.value??''}">
+      <input type="number" inputmode="decimal" aria-label="Price in euro" data-p="${esc(t.isin)}" placeholder="Price €" value="${pf.holdings[t.isin]?.price??''}"></div>`).join('');
   document.querySelectorAll('[data-v]').forEach(el=>el.addEventListener('input',e=>{
-    const i=e.target.dataset.v,v=parseFloat(e.target.value); pf.holdings[i]=pf.holdings[i]||{}; pf.holdings[i].value=isNaN(v)?0:v;pf.holdingsAsOf=new Date().toISOString().slice(0,10);recordSnapshot(pf,pf.holdingsAsOf);saveState(); renderPlan();}));
+    const i=e.target.dataset.v,v=parseFloat(e.target.value); pf.holdings[i]=pf.holdings[i]||{}; pf.holdings[i].value=isNaN(v)?0:v;
+    pf.holdingsAsOf=new Date().toISOString().slice(0,10);pf.holdings[i].valueDate=pf.holdingsAsOf;pf.holdingsSource='manual entry';
+    recordSnapshot(pf,pf.holdingsAsOf);saveState(); renderPlan();}));
   document.querySelectorAll('[data-p]').forEach(el=>el.addEventListener('input',e=>{
-    const i=e.target.dataset.p,v=parseFloat(e.target.value); pf.holdings[i]=pf.holdings[i]||{}; pf.holdings[i].price=isNaN(v)?undefined:v; saveState(); renderPlan();}));
+    const i=e.target.dataset.p,v=parseFloat(e.target.value); pf.holdings[i]=pf.holdings[i]||{}; pf.holdings[i].price=isNaN(v)?undefined:v;
+    pf.holdings[i].priceDate=new Date().toISOString().slice(0,10);
+    if(pf.holdings[i].qty>0&&v>0){pf.holdings[i].value=r2(pf.holdings[i].qty*v);pf.holdings[i].valueDate=pf.holdings[i].priceDate;}
+    saveState(); renderManual(); renderPlan();}));
 }
 function renderPfSelect(){
   document.getElementById('pfSelect').innerHTML =
@@ -590,7 +659,9 @@ function renderPfSelect(){
 }
 
 // ---------- performance ----------
-function contribTotal(pf){ return (pf.contributions||[]).reduce((s,c)=>s+(c.amount||0),0); }
+function depositTotal(pf){ return (pf.contributions||[]).reduce((s,c)=>s+(c.amount||0),0); }
+function investedSource(pf){ return pf.investedSource||((pf.trades||[]).length?'trades':'deposits'); }
+function contribTotal(pf){ return investedSource(pf)==='trades'?tradeInvested(pf):depositTotal(pf); }
 function renderDeposits(){
   const pf=active(); pf.contributions=pf.contributions||[];
   const list=[...pf.contributions].sort((a,b)=>a.date<b.date?1:(a.date>b.date?-1:0));
@@ -604,6 +675,47 @@ function renderDeposits(){
   document.querySelectorAll('[data-deldep]').forEach(el=>el.addEventListener('click',e=>{
     const id=e.target.dataset.deldep; pf.contributions=pf.contributions.filter(c=>c.id!==id); saveState(); renderPerf();}));
 }
+function renderInvestedSource(){
+  const pf=active(),host=document.getElementById('investedSrc'),note=document.getElementById('investedNote');
+  const t=tradeInvested(pf),d=depositTotal(pf),src=investedSource(pf);
+  if(!(pf.trades||[]).length){
+    host.innerHTML='';
+    note.textContent = d>0?'Total invested comes from the deposits you logged below.'
+      :'Upload or paste an IBKR trade confirmation, or log a deposit, to see your real return.';
+    return;
+  }
+  host.innerHTML=`<div class="chip ${src==='trades'?'on':''}" data-src="trades">Imported trades · ${eur2(t)}</div>
+    <div class="chip ${src==='deposits'?'on':''}" data-src="deposits">Logged deposits · ${eur2(d)}</div>`;
+  note.textContent = src==='trades'
+    ? 'Total invested = every buy in your trade ledger, commissions included, minus anything sold.'
+    : 'Total invested = the deposits you logged below. Imported trades are ignored for this figure.';
+  host.querySelectorAll('[data-src]').forEach(el=>el.onclick=()=>{pf.investedSource=el.dataset.src;saveState();renderPerf();
+    if(!document.getElementById('tab-charts').classList.contains('hide'))renderCharts();});
+}
+function renderTrades(){
+  const pf=active(),list=(pf.trades||[]).slice().reverse();
+  const nameOf=isin=>(pf.targets.find(t=>t.isin===isin)||{}).sleeve;
+  document.getElementById('tradeList').innerHTML = list.length ? list.map(t=>`
+    <div class="tradeRow">
+      <div class="tl"><b>${esc(t.symbol)}</b> <span style="color:var(--dim)">${t.side==='SELL'?'sold':'bought'} ${(+t.qty).toLocaleString('it-IT')} @ ${eur2(t.price)}</span>
+        <small>${esc(t.date)}${nameOf(t.isin)?' · '+esc(nameOf(t.isin)):''} · fees ${eur2((t.comm||0)+(t.fee||0))}</small></div>
+      <div class="tr"><b>${t.side==='SELL'?'−':''}${eur2(tradeCostOf(t))}</b></div>
+      <button class="iconbtn" data-deltrade="${esc(t.id)}" title="Remove this trade">✕</button>
+    </div>`).join('')
+    : '<div class="help" style="margin:0">No trades imported yet. Use <b>Upload report</b> (PDF works) or <b>Paste from IBKR</b> in the Plan tab.</div>';
+  document.getElementById('tradeActions').innerHTML = list.length
+    ? `<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="ghost danger" id="clearTrades">Clear all ${list.length} trades</button></div>` : '';
+  document.querySelectorAll('[data-deltrade]').forEach(el=>el.onclick=e=>{
+    const id=e.currentTarget.dataset.deltrade;
+    pf.trades=(pf.trades||[]).filter(t=>t.id!==id);
+    Object.values(pf.holdings).forEach(h=>{if(h){h.cost=undefined;h.fees=undefined;h.valueDate='';h.priceDate='';}});
+    rebuildFromTrades(pf);saveState();renderPerf();renderManual();renderPlan();});
+  const clr=document.getElementById('clearTrades');
+  if(clr)clr.onclick=()=>{
+    if(!confirm('Remove all imported trades? This clears the cost basis, fees and share counts they created. Current values and logged deposits stay.'))return;
+    pf.trades=[];Object.values(pf.holdings).forEach(h=>{if(h){h.cost=undefined;h.fees=undefined;h.qty=undefined;h.tradeQty=undefined;}});
+    saveState();renderPerf();renderManual();renderPlan();};
+}
 function renderPerf(){
   const pf=active(); pf.contributions=pf.contributions||[];
   document.getElementById('perfBody').innerHTML = pf.targets.map(t=>{
@@ -612,11 +724,11 @@ function renderPerf(){
   }).map(x=>{
     const c=x.c||0; const g=(x.v)-(c); const gp=c>0? g/c*100 : null;
     const cls=g>=0?'pos':'neg';
-    return `<tr><td>${esc(x.t.sleeve)}</td>
-      <td><input type="number" inputmode="decimal" data-cost="${esc(x.t.isin)}" placeholder="—" value="${x.c??''}" style="width:96px;text-align:right;padding:7px 8px;font-size:13px"></td>
-      <td>${eur(x.v)}</td>
-      <td class="${cls}">${x.c?eur(g):'—'}</td>
-      <td class="${cls}">${gp!=null?pctS(gp):'—'}</td></tr>`;
+    return `<tr><td class="full">${esc(x.t.sleeve)}</td>
+      <td data-label="Cost €"><input type="number" inputmode="decimal" data-cost="${esc(x.t.isin)}" placeholder="—" value="${x.c??''}" style="width:96px;text-align:right;padding:7px 8px;font-size:13px"></td>
+      <td data-label="Value €">${eur(x.v)}</td>
+      <td data-label="Gain €" class="${cls}">${x.c?eur(g):'—'}</td>
+      <td data-label="Gain %" class="${cls}">${gp!=null?pctS(gp):'—'}</td></tr>`;
   }).join('');
   document.querySelectorAll('[data-cost]').forEach(el=>el.addEventListener('input',e=>{
     const i=e.target.dataset.cost,v=parseFloat(e.target.value); pf.holdings[i]=pf.holdings[i]||{}; pf.holdings[i].cost=isNaN(v)?undefined:v; saveState(); renderPerf();}));
@@ -627,6 +739,10 @@ function renderPerf(){
   const rEl=document.getElementById('pfReturn');
   rEl.textContent = invested>0? (eur(g)+' · '+pctS(gp)) : 'log a deposit';
   rEl.className='value sm '+(g>=0?'pos':'neg');
+  const fees=tradeFees(pf);
+  document.getElementById('pfFees').textContent = fees>0?eur2(fees):'—';
+  renderInvestedSource();
+  renderTrades();
   renderDeposits();
   // drawdown from snapshots
   const snaps=(pf.snapshots||[]).filter(s=>s.v>0);
@@ -796,7 +912,221 @@ function numbersIn(s){const out=[];const re=/-?\d[\d.,]*\d|-?\d/g;let m;while((m
 function parsePaste(text){ const pf=active(); const isinRe=/\b([A-Z]{2}[A-Z0-9]{9}\d)\b/; let found=0;
   text.split(/\r?\n/).forEach(line=>{const m=line.match(isinRe);if(!m)return;const isin=m[1];
     const nums=numbersIn(line.replace(isin,' ')).filter(n=>Math.abs(n)>=1);if(!nums.length)return;
-    pf.holdings[isin]=pf.holdings[isin]||{};pf.holdings[isin].value=Math.max(...nums.map(Math.abs));found++;}); return found; }
+    pf.holdings[isin]=pf.holdings[isin]||{};pf.holdings[isin].value=Math.max(...nums.map(Math.abs));
+    pf.holdings[isin].valueDate=new Date().toISOString().slice(0,10);found++;}); return found; }
+
+
+// ---------- IBKR trade confirmations: PDF text extraction (offline, no libraries) ----------
+function bytesToLatin1(u8){let s='';const CH=0x8000;for(let i=0;i<u8.length;i+=CH)s+=String.fromCharCode.apply(null,u8.subarray(i,Math.min(i+CH,u8.length)));return s;}
+async function inflateBytes(bytes){
+  if(typeof DecompressionStream!=='function')return null;
+  for(const fmt of ['deflate','deflate-raw']){
+    try{
+      const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream(fmt));
+      const buf=await new Response(stream).arrayBuffer();
+      if(buf.byteLength)return new Uint8Array(buf);
+    }catch(e){}
+    try{ // tolerant pass: keep what decoded before a padded stream complained
+      const ds=new DecompressionStream(fmt),chunks=[];
+      const reader=ds.readable.getReader(),writer=ds.writable.getWriter();
+      const pump=(async()=>{for(;;){const r=await reader.read();if(r.done)break;chunks.push(r.value);}})().catch(()=>{});
+      try{await writer.write(bytes);await writer.close();}catch(e){try{await writer.abort();}catch(e2){}}
+      await pump;
+      const len=chunks.reduce((a,c)=>a+c.length,0);
+      if(len){const out=new Uint8Array(len);let o=0;for(const c of chunks){out.set(c,o);o+=c.length;}return out;}
+    }catch(e){}
+  }
+  return null;
+}
+function pdfUnescape(str){
+  return str.replace(/\\([nrtbf()\\]|[0-7]{1,3})/g,(m,g)=>{
+    if(/^[0-7]+$/.test(g))return String.fromCharCode(parseInt(g,8));
+    return {n:'\n',r:'\r',t:'\t',b:'\b',f:'\f','(':'(',')':')','\\':'\\'}[g]||g;
+  });
+}
+// Replay the text operators of one content stream so cells land back on their own row.
+function contentStreamLines(content){
+  const items=[];let tx=0,ty=0,lx=0,ly=0,m;
+  const pat=/(\((?:\\.|[^\\()])*\))\s*Tj|\[((?:\\.|[^\\\]])*)\]\s*TJ|(-?[\d.]+)\s+(-?[\d.]+)\s+(Td|TD)|(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+Tm|(BT)/g;
+  while((m=pat.exec(content))){
+    if(m[13]){tx=ty=lx=ly=0;}
+    else if(m[11]!==undefined){lx=tx=parseFloat(m[10]);ly=ty=parseFloat(m[11]);}
+    else if(m[5]){lx+=parseFloat(m[3]);ly+=parseFloat(m[4]);tx=lx;ty=ly;}
+    else if(m[1]!==undefined){items.push([Math.round(ty*10)/10,tx,pdfUnescape(m[1].slice(1,-1))]);}
+    else if(m[2]!==undefined){const parts=m[2].match(/\((?:\\.|[^\\()])*\)/g)||[];
+      items.push([Math.round(ty*10)/10,tx,parts.map(x=>pdfUnescape(x.slice(1,-1))).join('')]);}
+  }
+  const byY=new Map();
+  items.forEach(it=>{if(!byY.has(it[0]))byY.set(it[0],[]);byY.get(it[0]).push(it);});
+  return [...byY.keys()].sort((a,b)=>b-a).map(y=>
+    byY.get(y).sort((a,b)=>a[1]-b[1]).map(c=>c[2]).join(' ').replace(/\s+/g,' ').trim()).filter(Boolean);
+}
+async function pdfToText(arrayBuffer){
+  const u8=new Uint8Array(arrayBuffer),raw=bytesToLatin1(u8);
+  if(raw.slice(0,5)!=='%PDF-')throw new Error('That file is not a PDF.');
+  if(typeof DecompressionStream!=='function')
+    throw new Error('This browser cannot read PDFs. Open the PDF, copy the Trades table and use “Paste from IBKR”.');
+  const lines=[];let pages=0,m;const re=/stream\r?\n/g;
+  while((m=re.exec(raw))){
+    const start=m.index+m[0].length;let end=raw.indexOf('endstream',start);
+    if(end<=start)continue;
+    while(end>start&&(raw.charCodeAt(end-1)===10||raw.charCodeAt(end-1)===13))end--;
+    const dict=raw.slice(Math.max(0,m.index-500),m.index);
+    if(/\/Subtype\s*\/Image/.test(dict))continue;
+    let content=null;
+    if(/FlateDecode/.test(dict)){const out=await inflateBytes(u8.subarray(start,end));if(out)content=bytesToLatin1(out);}
+    else if(!/\/Filter/.test(dict))content=raw.slice(start,end);
+    if(!content||!/(Tj|TJ)\b/.test(content))continue;
+    pages++;lines.push(...contentStreamLines(content));
+  }
+  if(!pages)throw new Error('No readable text in this PDF — it looks like a scan. Copy the Trades table and use “Paste from IBKR”.');
+  return lines.join('\n');
+}
+
+// ---------- IBKR trade confirmation parsing (PDF text, CSV text or pasted text) ----------
+const TRADE_NUM='-?[\\d,]+(?:\\.\\d+)?';
+const TRADE_RE=new RegExp('\\b([A-Z][A-Z0-9.\\-]{0,11})\\s+(\\d{4}-\\d{2}-\\d{2}),?\\s*(\\d{2}:\\d{2}:\\d{2})?\\s+'+
+  '(?:(\\d{4}-\\d{2}-\\d{2})\\s+)?(?:(\\S+)\\s+)?(BUY|SELL)\\s+('+TRADE_NUM+')\\s+('+TRADE_NUM+')\\s+('+TRADE_NUM+')'+
+  '(?:\\s+('+TRADE_NUM+'))?(?:\\s+('+TRADE_NUM+'))?','g');
+const NOT_A_SYMBOL=/^(TOTAL|SUBTOTAL|BUY|SELL|STOCKS|TRADES|EUR|USD|GBP|CHF|LMT|MKT)$/;
+function tradeNum(v){if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/,/g,''));return Number.isFinite(n)?n:null;}
+function escRe(v){return String(v).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+function findTradeRows(text){
+  const flat=String(text||'').replace(/\u00a0/g,' ');const rows=[];let m;TRADE_RE.lastIndex=0;
+  while((m=TRADE_RE.exec(flat))){
+    const symbol=m[1].toUpperCase();if(NOT_A_SYMBOL.test(symbol))continue;
+    const qty=tradeNum(m[7]),price=tradeNum(m[8]),proceeds=tradeNum(m[9]);
+    if(qty==null||price==null||proceeds==null||!(price>0)||!(Math.abs(qty)>0))continue;
+    rows.push({symbol,date:m[2],time:m[3]||'',exchange:m[5]||'-',side:m[6].toUpperCase(),
+      qty:Math.abs(qty),price,proceeds,comm:Math.abs(tradeNum(m[10])||0),fee:Math.abs(tradeNum(m[11])||0)});
+  }
+  // one order can be printed as an aggregate row plus its individual fills — keep it once
+  const groups=new Map();
+  rows.forEach(r=>{const k=[r.symbol,r.date,r.time,r.side,r.price].join('|');
+    if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);});
+  const out=[];
+  groups.forEach(list=>{
+    const agg=list.filter(r=>r.exchange==='-'||r.exchange==='');
+    if(agg.length){out.push(agg[0]);return;}
+    const base=Object.assign({},list[0],{exchange:'-'});
+    base.qty=list.reduce((a,r)=>a+r.qty,0);base.proceeds=list.reduce((a,r)=>a+r.proceeds,0);
+    base.comm=list.reduce((a,r)=>a+r.comm,0);base.fee=list.reduce((a,r)=>a+r.fee,0);
+    out.push(base);
+  });
+  return out.sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+}
+function mapSymbolsToIsins(text,symbols,targets){
+  const map={},at={};
+  symbols.forEach(sym=>{at[sym]=[];const re=new RegExp('\\b'+escRe(sym)+'\\b','g');let m;
+    while((m=re.exec(text)))at[sym].push(m.index);});
+  const isinRe=/\b([A-Z]{2}[A-Z0-9]{9}\d)\b/g;let im;
+  while((im=isinRe.exec(text))){
+    let best=null,bestD=Infinity;
+    symbols.forEach(sym=>at[sym].forEach(pos=>{const d=Math.abs(pos-im.index);if(d<bestD&&d<200){bestD=d;best=sym;}}));
+    if(best&&!map[best])map[best]=im[1];
+  }
+  symbols.forEach(sym=>{ if(map[sym])return;
+    const t=(targets||[]).find(x=>(x.ticker||'').toUpperCase()===sym||(x.isin||'').toUpperCase()===sym);
+    if(t)map[sym]=t.isin; });
+  return map;
+}
+function tradeKey(t){return [t.date,t.time,t.symbol,t.side,t.qty,t.price].join('|');}
+function tradeCostOf(t){return Math.abs(t.proceeds)+Math.abs(t.comm||0)+Math.abs(t.fee||0);}
+function parseTradeText(text,targets,existing){
+  const rows=findTradeRows(text);
+  if(!rows.length)return null;
+  const symbols=[...new Set(rows.map(r=>r.symbol))];
+  const map=mapSymbolsToIsins(text,symbols,targets);
+  const seen=new Set((existing||[]).map(tradeKey));
+  const trades=[],unmapped=new Set();let duplicates=0;
+  rows.forEach(r=>{
+    const isin=map[r.symbol]||null;if(!isin)unmapped.add(r.symbol);
+    const t=Object.assign({},r,{isin,id:tradeKey(r)});
+    if(seen.has(t.id))duplicates++;else trades.push(t);
+  });
+  const usable=trades.filter(t=>t.isin);
+  const dates=rows.map(r=>r.date).sort();
+  return {trades:usable,unmapped:[...unmapped],summary:{
+    orders:rows.length,newTrades:usable.length,duplicates,symbols,
+    cost:Math.round(usable.reduce((a,t)=>a+(t.side==='SELL'?-Math.abs(t.proceeds):tradeCostOf(t)),0)*100)/100,
+    fees:Math.round(usable.reduce((a,t)=>a+Math.abs(t.comm||0)+Math.abs(t.fee||0),0)*100)/100,
+    date:dates[dates.length-1]||null}};
+}
+
+// ---------- trade ledger -> holdings, cost basis and fees ----------
+function r2(n){return Math.round((n||0)*100)/100;}
+function r6(n){return Math.round((n||0)*1e6)/1e6;}
+function rebuildFromTrades(pf){
+  const agg={};
+  (pf.trades||[]).forEach(t=>{
+    if(!t.isin)return;
+    const a=agg[t.isin]||(agg[t.isin]={qty:0,cost:0,fees:0,price:0,date:'',stamp:''});
+    const fees=Math.abs(t.comm||0)+Math.abs(t.fee||0);
+    if(t.side==='SELL'){
+      const avg=a.qty>0?a.cost/a.qty:0,q=Math.min(a.qty,t.qty);
+      a.qty-=q;a.cost=Math.max(0,a.cost-avg*q);
+    }else{ a.qty+=t.qty;a.cost+=tradeCostOf(t); }
+    a.fees+=fees;
+    const stamp=(t.date||'')+(t.time||'');
+    if(stamp>=a.stamp){a.stamp=stamp;a.date=t.date||'';a.price=t.price;}
+  });
+  Object.keys(agg).forEach(isin=>{
+    const a=agg[isin],h=pf.holdings[isin]||(pf.holdings[isin]={});
+    h.cost=r2(a.cost); h.fees=r2(a.fees); h.tradeQty=r6(a.qty);
+    // trades only take over the value when they are newer than whatever set it last
+    if(!h.valueDate||h.valueDate<=a.date){
+      h.qty=r6(a.qty);
+      if(!(h.price>0)||!h.priceDate||h.priceDate<=a.date){h.price=a.price;h.priceDate=a.date;}
+      h.value=r2(a.qty*(h.price||0));
+      h.valueDate=a.date;
+    }
+  });
+}
+function tradeInvested(pf){return r2((pf.trades||[]).reduce((s,t)=>s+(t.side==='SELL'
+  ?-(Math.abs(t.proceeds)-Math.abs(t.comm||0)-Math.abs(t.fee||0)):tradeCostOf(t)),0));}
+function tradeFees(pf){return r2((pf.trades||[]).reduce((s,t)=>s+Math.abs(t.comm||0)+Math.abs(t.fee||0),0));}
+function applyTrades(pf,list){
+  pf.trades=(pf.trades||[]).concat(list).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  rebuildFromTrades(pf);
+  const last=pf.trades[pf.trades.length-1];
+  pf.holdingsAsOf=(last&&last.date)||new Date().toISOString().slice(0,10);
+  pf.holdingsSource='trades';
+  if(!pf.investedSource)pf.investedSource='trades';
+  recordSnapshot(pf,pf.holdingsAsOf);
+  saveState();
+}
+function refreshAfterImport(){
+  renderManual();renderPlan();
+  if(!document.getElementById('tab-perf').classList.contains('hide'))renderPerf();
+  if(!document.getElementById('tab-charts').classList.contains('hide'))renderCharts();
+}
+function renderTradePreview(host,parsed,onDone){
+  const s=parsed.summary;
+  const lines=parsed.trades.map(t=>`${esc(t.date)} · <b>${esc(t.symbol)}</b> ${t.side} ${t.qty} @ ${eur2(t.price)} → ${eur2(tradeCostOf(t))}`);
+  host.innerHTML=`<div class="importSummary"><b>Review before importing</b>
+    <div class="summaryGrid">
+      <div>New trades<b>${s.newTrades}</b></div>
+      <div>Already imported<b>${s.duplicates}</b></div>
+      <div>Trade date<b>${esc(s.date||'—')}</b></div>
+      <div>Cash invested<b>${eur2(s.cost)}</b></div>
+      <div>Commissions<b>${eur2(s.fees)}</b></div>
+      <div>Instruments<b>${s.symbols.length}</b></div>
+    </div>
+    ${lines.length?`<div class="help" style="margin:6px 0 0">${lines.slice(0,10).join('<br>')}${lines.length>10?'<br>…':''}</div>`:''}
+    ${parsed.unmapped.length?`<div class="ticketWarn">No ISIN found for ${esc(parsed.unmapped.join(', '))}. These rows are skipped — add the ticker to this portfolio (⚙︎) or include the “Financial Instrument Information” section, then import again.</div>`:''}
+    ${s.newTrades?'':'<div class="ticketWarn">Nothing new to import — every trade in this document is already in your ledger.</div>'}
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="primary" id="confirmTrades" ${s.newTrades?'':'disabled'}>Confirm import</button>
+      <button class="ghost" id="cancelTrades">Cancel</button></div></div>`;
+  const done=()=>{if(onDone)onDone();};
+  const btn=document.getElementById('confirmTrades');
+  if(btn)btn.onclick=()=>{
+    applyTrades(active(),parsed.trades);refreshAfterImport();done();
+    host.innerHTML=`<div class="importSummary"><b>Imported ${s.newTrades} trade(s)</b>
+      <div class="help" style="margin:5px 0 0">Holdings, cost basis, fees and the buy plan now include the document dated ${esc(s.date||'today')}.</div></div>`;
+  };
+  document.getElementById('cancelTrades').onclick=()=>{host.innerHTML='';done();};
+}
 
 // ---------- report upload (client-side, preview before commit) ----------
 let pendingImport=null;
@@ -917,15 +1247,32 @@ function renderImportPreview(result,error){
     ${w.length?`<div class="ticketWarn">${esc(w.slice(0,4).join(' · '))}${w.length>4?' · …':''}</div>`:''}
     <div style="display:flex;gap:8px;margin-top:10px"><button class="primary" id="confirmImport">Confirm import</button><button class="ghost" id="cancelImport">Cancel</button></div></div>`;
   document.getElementById('confirmImport').onclick=()=>{
-    const pf=active();pf.holdings=result.holdings;pf.holdingsAsOf=s.reportDate;recordSnapshot(pf,s.reportDate);saveState();pendingImport=null;
+    const pf=active();pf.holdings=result.holdings;
+    Object.values(pf.holdings).forEach(h=>{h.valueDate=s.reportDate;h.priceDate=s.reportDate;});
+    pf.holdingsAsOf=s.reportDate;pf.holdingsSource='positions report';
+    rebuildFromTrades(pf);recordSnapshot(pf,s.reportDate);saveState();pendingImport=null;
     document.getElementById('reportFile').value='';renderManual();renderPlan();
     el.innerHTML=`<div class="importSummary"><b>Imported ${s.rowsParsed-s.ignored} position row(s)</b><div class="help" style="margin:5px 0 0">Holdings now reflect the report dated ${esc(s.reportDate)}.</div></div>`;
   };
   document.getElementById('cancelImport').onclick=()=>{pendingImport=null;document.getElementById('reportFile').value='';el.innerHTML='';};
 }
 async function readReport(file){
-  const text=(await file.text()).replace(/^\uFEFF/,'').trim();if(!text)throw new Error('The selected file is empty.');
-  return text.startsWith('<')?parseReportXML(text):parseReportCSV(text);
+  const pf=active();
+  const name=(file.name||'').toLowerCase();
+  if(name.endsWith('.pdf')||file.type==='application/pdf'){
+    const text=await pdfToText(await file.arrayBuffer());
+    const trades=parseTradeText(text,pf.targets,pf.trades);
+    if(trades)return {kind:'trades',data:trades};
+    throw new Error('No trade rows were found in this PDF. If it is an activity statement, export it as XML/CSV instead.');
+  }
+  const text=(await file.text()).replace(/^\uFEFF/,'').trim();
+  if(!text)throw new Error('The selected file is empty.');
+  if(text.startsWith('<'))return {kind:'positions',data:parseReportXML(text)};
+  if(/\b(BUY|SELL)\b/.test(text)&&!/open\s*positions/i.test(text)){
+    const trades=parseTradeText(text,pf.targets,pf.trades);
+    if(trades)return {kind:'trades',data:trades};
+  }
+  return {kind:'positions',data:parseReportCSV(text)};
 }
 
 // ---------- tabs ----------
@@ -954,12 +1301,34 @@ function showHold(mode){
 document.getElementById('tabManual').onclick=()=>showHold('manual');
 document.getElementById('tabPaste').onclick=()=>showHold('paste');
 document.getElementById('tabUpload').onclick=()=>showHold('upload');
-document.getElementById('clearPaste').onclick=()=>{document.getElementById('pasteArea').value='';document.getElementById('parseMsg').textContent='';};
-document.getElementById('parseBtn').onclick=()=>{const n=parsePaste(document.getElementById('pasteArea').value);if(n){active().holdingsAsOf=new Date().toISOString().slice(0,10);recordSnapshot(active(),active().holdingsAsOf);}saveState();renderManual();renderPlan();
-  document.getElementById('parseMsg').innerHTML=n?`Imported <b>${n}</b> position(s). Check them under “Enter values”.`:'No ISINs found.';};
+document.getElementById('clearPaste').onclick=()=>{document.getElementById('pasteArea').value='';
+  document.getElementById('parseMsg').textContent='';document.getElementById('pastePreview').innerHTML='';};
+document.getElementById('parseBtn').onclick=()=>{
+  const text=document.getElementById('pasteArea').value;
+  const msg=document.getElementById('parseMsg'),host=document.getElementById('pastePreview');
+  const pf=active();
+  const trades=parseTradeText(text,pf.targets,pf.trades);
+  if(trades){
+    msg.innerHTML=`Recognised <b>${trades.summary.orders}</b> order(s) from a trade confirmation.`;
+    renderTradePreview(host,trades,null);
+    return;
+  }
+  host.innerHTML='';
+  const n=parsePaste(text);
+  if(n){const today=new Date().toISOString().slice(0,10);
+    Object.values(pf.holdings).forEach(h=>{if(h)h.valueDate=today;});
+    pf.holdingsAsOf=today;pf.holdingsSource='pasted values';recordSnapshot(pf,today);}
+  saveState();renderManual();renderPlan();
+  msg.innerHTML=n?`Imported <b>${n}</b> position value(s). Check them under “Enter values”.`
+    :'Nothing recognised — paste either the Trades table or a positions list containing ISINs.';};
 document.getElementById('reportFile').addEventListener('change',async e=>{const file=e.target.files&&e.target.files[0];if(!file)return;
-  document.getElementById('importPreview').innerHTML='<div class="help">Reading report…</div>';
-  try{pendingImport=await readReport(file);renderImportPreview(pendingImport);}catch(err){renderImportPreview(null,err.message||String(err));}});
+  const host=document.getElementById('importPreview');
+  host.innerHTML='<div class="help">Reading '+esc(file.name||'report')+'…</div>';
+  try{
+    const res=await readReport(file);
+    if(res.kind==='trades'){pendingImport=null;renderTradePreview(host,res.data,()=>{document.getElementById('reportFile').value='';});}
+    else{pendingImport=res.data;renderImportPreview(pendingImport);}
+  }catch(err){renderImportPreview(null,err.message||String(err));}});
 document.getElementById('contribution').addEventListener('input',e=>{const v=parseFloat(e.target.value);active().contribution=isNaN(v)?0:v;saveState();renderPlan();});
 document.getElementById('positionCount').addEventListener('change',e=>{active().maxPositions=Math.max(1,Math.min(active().targets.length,+e.target.value||1));saveState();renderPlan();});
 
