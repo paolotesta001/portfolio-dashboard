@@ -1,6 +1,6 @@
 {
   "as_of": "2026-08-28",
-  "updated": "2026-08-29T12:50:21+00:00",
+  "updated": "2026-08-29T14:26:43+00:00",
   "source": "Yahoo Finance - closing price on the listed exchange",
   "currency": "EUR",
   "failed": [],
@@ -17,10 +17,10 @@
       "symbol": "XDEM.DE",
       "date": "2026-08-28"
     },
-    "IE00BL25JL35": {
-      "price": 79.67,
+    "IE00BL25JM42": {
+      "price": 72.98,
       "currency": "EUR",
-      "symbol": "XDEQ.DE",
+      "symbol": "XDEV.DE",
       "date": "2026-08-28"
     },
     "IE00BKM4GZ66": {
@@ -30,15 +30,27 @@
       "date": "2026-08-28"
     },
     "IE00BDBRDM35": {
-      "price": 23.522,
+      "price": 4.893,
       "currency": "EUR",
-      "symbol": "VAGF.DE",
+      "symbol": "EUNA.DE",
       "date": "2026-08-28"
     },
     "IE00B0M62X26": {
       "price": 235.82,
       "currency": "EUR",
       "symbol": "IBCI.AS",
+      "date": "2026-08-28"
+    },
+    "IE00B4ND3602": {
+      "price": 76.18,
+      "currency": "EUR",
+      "symbol": "EGLN.L",
+      "date": "2026-08-28"
+    },
+    "IE00BL25JL35": {
+      "price": 79.67,
+      "currency": "EUR",
+      "symbol": "XDEQ.DE",
       "date": "2026-08-28"
     },
     "IE00B579F325": {

@@ -276,7 +276,7 @@
         <div id="pastePreview"></div>
       </div>
       <div id="paneUpload" class="hide">
-        <div class="banner">Upload an IBKR <b>Trade Confirmation PDF</b>, a Flex Query XML, or an Activity/plain CSV. Nothing changes until you review and confirm.</div>
+        <div class="banner">Upload an IBKR <b>Activity Statement PDF</b> (positions, cost basis and closing prices), a <b>Trade Confirmation PDF</b>, a Flex Query XML, or a CSV. Nothing changes until you review and confirm.</div>
         <input type="file" id="reportFile" accept=".pdf,.xml,.csv,application/pdf,text/csv,text/xml,application/xml">
         <div id="importPreview"></div>
       </div>
@@ -453,7 +453,7 @@
 </div>
 
 <script>
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.2.0';
 const DEFAULT_TARGETS = [
   {sleeve:"Core World",       name:"UBS Core MSCI World",           isin:"IE00BD4TXV59", pct:35, ticker:"UETW", exchange:"IBIS"},
   {sleeve:"Momentum",         name:"Xtrackers MSCI World Momentum", isin:"IE00BL25JP72", pct:10, ticker:"XDEM", exchange:"IBIS2"},
@@ -667,8 +667,16 @@ function renderPfSelect(){
 
 // ---------- performance ----------
 function depositTotal(pf){ return (pf.contributions||[]).reduce((s,c)=>s+(c.amount||0),0); }
-function investedSource(pf){ return pf.investedSource||((pf.trades||[]).length?'trades':'deposits'); }
-function contribTotal(pf){ return investedSource(pf)==='trades'?tradeInvested(pf):depositTotal(pf); }
+function costBasisTotal(pf){ return r2(Object.values(pf.holdings||{}).reduce((s,h)=>s+((h&&h.cost)||0),0)); }
+function investedSource(pf){
+  if(pf.investedSource)return pf.investedSource;
+  if(costBasisTotal(pf)>0)return 'cost';
+  return (pf.trades||[]).length?'trades':'deposits';
+}
+function contribTotal(pf){
+  const src=investedSource(pf);
+  return src==='cost'?costBasisTotal(pf):src==='trades'?tradeInvested(pf):depositTotal(pf);
+}
 function renderDeposits(){
   const pf=active(); pf.contributions=pf.contributions||[];
   const list=[...pf.contributions].sort((a,b)=>a.date<b.date?1:(a.date>b.date?-1:0));
@@ -684,18 +692,23 @@ function renderDeposits(){
 }
 function renderInvestedSource(){
   const pf=active(),host=document.getElementById('investedSrc'),note=document.getElementById('investedNote');
-  const t=tradeInvested(pf),d=depositTotal(pf),src=investedSource(pf);
-  if(!(pf.trades||[]).length){
+  const t=tradeInvested(pf),d=depositTotal(pf),c=costBasisTotal(pf),src=investedSource(pf);
+  if(!c&&!(pf.trades||[]).length){
     host.innerHTML='';
     note.textContent = d>0?'Total invested comes from the deposits you logged below.'
-      :'Upload or paste an IBKR trade confirmation, or log a deposit, to see your real return.';
+      :'Upload an IBKR statement, or log a deposit, to see your real return.';
     return;
   }
-  host.innerHTML=`<div class="chip ${src==='trades'?'on':''}" data-src="trades">Imported trades · ${eur2(t)}</div>
-    <div class="chip ${src==='deposits'?'on':''}" data-src="deposits">Logged deposits · ${eur2(d)}</div>`;
-  note.textContent = src==='trades'
+  const chips=[];
+  if(c>0)chips.push(`<div class="chip ${src==='cost'?'on':''}" data-src="cost">Cost basis · ${eur2(c)}</div>`);
+  if(t>0)chips.push(`<div class="chip ${src==='trades'?'on':''}" data-src="trades">Imported trades · ${eur2(t)}</div>`);
+  chips.push(`<div class="chip ${src==='deposits'?'on':''}" data-src="deposits">Logged deposits · ${eur2(d)}</div>`);
+  host.innerHTML=chips.join('');
+  note.textContent = src==='cost'
+    ? 'Total invested = what every holding cost you, taken from your statement — the most complete figure when not all buys are in the trade ledger.'
+    : src==='trades'
     ? 'Total invested = every buy in your trade ledger, commissions included, minus anything sold.'
-    : 'Total invested = the deposits you logged below. Imported trades are ignored for this figure.';
+    : 'Total invested = the deposits you logged below.';
   host.querySelectorAll('[data-src]').forEach(el=>el.onclick=()=>{pf.investedSource=el.dataset.src;saveState();renderPerf();
     if(!document.getElementById('tab-charts').classList.contains('hide'))renderCharts();});
 }
@@ -1136,6 +1149,62 @@ function renderTradePreview(host,parsed,onDone){
   document.getElementById('cancelTrades').onclick=()=>{host.innerHTML='';done();};
 }
 
+
+// ---------- IBKR Activity Statement: the Open Positions table ----------
+const MONTHS={january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',
+  july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'};
+// SYMBOL qty mult costPrice costBasis closePrice value unrealisedP/L [code]
+const POSITION_ROW=new RegExp('^([A-Z][A-Z0-9.]{0,11})\\s+(-?[\\d,]+(?:\\.\\d+)?)\\s+(\\d+)\\s+'+
+  '([\\d,]+(?:\\.\\d+)?)\\s+(-?[\\d,]+(?:\\.\\d+)?)\\s+([\\d,]+(?:\\.\\d+)?)\\s+'+
+  '(-?[\\d,]+(?:\\.\\d+)?)\\s+(-?[\\d,]+(?:\\.\\d+)?)(?:\\s+[A-Za-z;]{1,8})?$');
+function statementDate(text){
+  const m=text.match(/(?:Activity Statement|Statement)\s*[-\u2013]\s*([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/);
+  if(m&&MONTHS[m[1].toLowerCase()])return `${m[3]}-${MONTHS[m[1].toLowerCase()]}-${String(m[2]).padStart(2,'0')}`;
+  const iso=text.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+  return iso?iso[1]:null;
+}
+function symbolIsinTable(text){
+  const map={},start=text.search(/Financial Instrument Information/);
+  if(start<0)return map;
+  text.slice(start).split('\n').forEach(line=>{
+    const m=line.match(/^([A-Z][A-Z0-9.]{0,11})\s+.*?\b([A-Z]{2}[A-Z0-9]{9}\d)\b/);
+    if(m&&!NOT_A_SYMBOL.test(m[1]))map[m[1]]=m[2];
+  });
+  return map;
+}
+function parseActivityPositions(text){
+  const start=text.search(/\bOpen Positions\b/);
+  if(start<0)return null;
+  let end=text.search(/Financial Instrument Information/);
+  if(end<0||end<start)end=text.length;
+  const map=symbolIsinTable(text),pf=active();
+  const rows=[],warnings=[];let ignored=0;
+  text.slice(start,end).split('\n').forEach(line=>{
+    const m=line.trim().match(POSITION_ROW);
+    if(!m)return;
+    const symbol=m[1].toUpperCase();
+    if(NOT_A_SYMBOL.test(symbol))return;
+    const qty=tradeNum(m[2]),cost=tradeNum(m[5]),price=tradeNum(m[6]),value=tradeNum(m[7]);
+    if(!(qty>0)||!(price>0))return;
+    const isin=map[symbol]||(pf.targets.find(t=>(t.ticker||'').toUpperCase()===symbol)||{}).isin;
+    if(!isin){ignored++;warnings.push(`${symbol}: no ISIN found, row skipped`);return;}
+    if(rows.some(r=>r.isin===isin))return;             // repeated page headers
+    rows.push({isin,symbol,qty,price,cost,value:value||qty*price});
+  });
+  if(!rows.length)return null;
+  const date=statementDate(text);
+  if(!date)throw new Error('Positions were found but the statement date was not — cannot stamp the holdings safely.');
+  const holdings={};let matched=0,unmatched=0,total=0;
+  rows.forEach(r=>{
+    if(pf.targets.some(t=>t.isin===r.isin))matched++;else unmatched++;
+    total+=r.value;
+    holdings[r.isin]={value:r2(r.value),price:r.price,qty:r.qty,cost:r2(r.cost),
+      currency:'EUR',fx:1,symbol:r.symbol};
+  });
+  return {holdings,warnings,summary:{rowsParsed:rows.length+ignored,matched,unmatched,
+    ignored,total,reportDate:date}};
+}
+
 // ---------- report upload (client-side, preview before commit) ----------
 let pendingImport=null;
 const cleanHead=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
@@ -1257,6 +1326,7 @@ function renderImportPreview(result,error){
   document.getElementById('confirmImport').onclick=()=>{
     const pf=active();pf.holdings=result.holdings;
     Object.values(pf.holdings).forEach(h=>{h.valueDate=s.reportDate;h.priceDate=s.reportDate;h.qtyDate=s.reportDate;});
+    pf.holdingsAsOf=s.reportDate;
     pf.holdingsAsOf=s.reportDate;pf.holdingsSource='positions report';
     rebuildFromTrades(pf);recordSnapshot(pf,s.reportDate);saveState();pendingImport=null;
     document.getElementById('reportFile').value='';renderManual();renderPlan();
@@ -1271,7 +1341,11 @@ async function readReport(file){
     const text=await pdfToText(await file.arrayBuffer());
     const trades=parseTradeText(text,pf.targets,pf.trades);
     if(trades)return {kind:'trades',data:trades};
-    throw new Error('No trade rows were found in this PDF. If it is an activity statement, export it as XML/CSV instead.');
+    const positions=parseActivityPositions(text);
+    if(positions)return {kind:'positions',data:positions};
+    const none=text.match(/No trades for ([A-Za-z]+ \d{1,2}, \d{4})/);
+    if(none)throw new Error(`This confirmation says there were no trades on ${none[1]}, so there is nothing to import. Upload an Activity Statement instead to refresh your positions.`);
+    throw new Error('This PDF has neither a Trades table nor an Open Positions table.');
   }
   const text=(await file.text()).replace(/^\uFEFF/,'').trim();
   if(!text)throw new Error('The selected file is empty.');
@@ -1291,7 +1365,7 @@ let priceState={busy:false,error:null,checked:store.get('pr_pricesChecked',null)
 function applyPrices(){
   if(!priceData||!priceData.prices)return {updated:0,missing:[],noQty:[]};
   const asOf=priceData.as_of||'';
-  let updated=0;const noQty=new Set();
+  let updated=0;const noQty=new Set(),suspect=[];
   state.portfolios.forEach(pf=>{
     let touched=false;
     Object.keys(pf.holdings||{}).forEach(isin=>{
@@ -1299,6 +1373,14 @@ function applyPrices(){
       if(!h||!quote||!(quote.price>0))return;
       const day=quote.date||asOf;
       if(h.priceDate&&h.priceDate>day)return;   // never move a price backwards in time
+      // A quote several times the known price means the ISIN is mapped to the wrong fund.
+      if(h.price>0){
+        const ratio=quote.price/h.price;
+        if(ratio>1.6||ratio<0.625){
+          suspect.push(`${quote.symbol||isin} quotes ${eur2(quote.price)} but this holding was ${eur2(h.price)}`);
+          return;
+        }
+      }
       h.price=quote.price;h.priceDate=day;
       if(h.qty>0){h.value=r2(h.qty*quote.price);h.valueDate=day;touched=true;updated++;}
       else if(h.value>0)noQty.add(isin);
@@ -1308,7 +1390,7 @@ function applyPrices(){
   const pf=active();
   const missing=pf.targets.filter(t=>!priceData.prices[t.isin]).map(t=>t.sleeve);
   if(updated)saveState();
-  return {updated,missing,noQty:[...noQty]};
+  return {updated,missing,noQty:[...noQty],suspect};
 }
 function renderPriceNote(){
   const el=document.getElementById('priceNote');if(!el)return;
@@ -1327,7 +1409,8 @@ function renderPriceNote(){
     (stale?` (${age} days old)`:'')+` · ${esc((priceData.source||'').split(' - ')[0])}`+
     (priceState.error?` · last check failed (${esc(priceState.error)})`:'')+
     (info.missing.length?`<br>No price for ${esc(info.missing.join(', '))} — add the ISIN to <code>docs/instruments.json</code>.`:'')+
-    (info.noQty.length?`<br>${info.noQty.length} holding(s) have a value but no share count, so their value can't be repriced. Import a trade confirmation to fix that.`:'');
+    (info.noQty.length?`<br>${info.noQty.length} holding(s) have a value but no share count, so their value can't be repriced. Import a statement to fix that.`:'')+
+    ((info.suspect||[]).length?`<br><b class="stale">Price rejected:</b> ${esc(info.suspect.join('; '))}. Check that ISIN's symbol in <code>docs/instruments.json</code>.`:'');
 }
 let applyPricesInfo=null;
 async function syncPrices(manual){
@@ -1387,6 +1470,14 @@ document.getElementById('parseBtn').onclick=()=>{
   if(trades){
     msg.innerHTML=`Recognised <b>${trades.summary.orders}</b> order(s) from a trade confirmation.`;
     renderTradePreview(host,trades,null);
+    return;
+  }
+  let positions=null;
+  try{positions=parseActivityPositions(text);}catch(err){positions=null;}
+  if(positions){
+    msg.innerHTML=`Recognised an <b>Open Positions</b> table dated ${esc(positions.summary.reportDate)}.`;
+    pendingImport=positions;renderImportPreview(positions);
+    document.getElementById('paneUpload').scrollIntoView({behavior:'smooth',block:'nearest'});
     return;
   }
   host.innerHTML='';
