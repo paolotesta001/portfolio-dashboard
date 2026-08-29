@@ -1,5 +1,5 @@
 /* Portfolio Rebalancer — service worker (offline app shell) */
-const CACHE = 'portfolio-rebalancer-v2.0.0';
+const CACHE = 'portfolio-rebalancer-v2.1.0';
 const ASSETS = [
   './',
   './index.html',
@@ -23,6 +23,18 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // App is fully self-contained: cache-first, fall back to network.
+  const url = new URL(e.request.url);
+  // Prices change daily: always try the network first, fall back to the last copy.
+  if (url.pathname.endsWith('/prices.json') || url.pathname.endsWith('prices.json')) {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put('./prices.json', copy)).catch(() => {});
+        return res;
+      }).catch(() => caches.match('./prices.json'))
+    );
+    return;
+  }
+  // Everything else is a static app shell: cache-first, fall back to network.
   e.respondWith(caches.match(e.request).then(hit => hit || fetch(e.request)));
 });

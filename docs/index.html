@@ -165,7 +165,11 @@
   .tradeRow .tl b{font-size:13.5px}
   .tradeRow .tl small{display:block;color:var(--dim);font-size:11px}
   .tradeRow .tr{text-align:right;white-space:nowrap}
-  .srcNote{color:var(--dim);font-size:12px;margin:8px 3px 0}
+  .srcNote{color:var(--dim);font-size:12px;margin:8px 3px 0;line-height:1.5}
+  .priceBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 3px 0}
+  .priceBar .txt{flex:1;min-width:180px;color:var(--dim);font-size:12px;line-height:1.5}
+  .priceBar button{padding:8px 12px;font-size:12.5px}
+  .priceBar .stale{color:var(--amber)}
   .welcome{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;padding:32px max(24px,env(safe-area-inset-left))}
   .welcome-logo{width:88px;height:88px;border-radius:22px;margin-bottom:22px}
@@ -279,6 +283,8 @@
     </div>
 
     <div class="srcNote" id="asOfNote"></div>
+    <div class="priceBar"><div class="txt" id="priceNote"></div>
+      <button class="ghost" id="refreshPrices">↻ Update prices</button></div>
 
     <h2>Buy this month</h2>
     <div class="buybox" id="buybox"></div>
@@ -447,7 +453,7 @@
 </div>
 
 <script>
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 const DEFAULT_TARGETS = [
   {sleeve:"Core World",       name:"UBS Core MSCI World",           isin:"IE00BD4TXV59", pct:35, ticker:"UETW", exchange:"IBIS"},
   {sleeve:"Momentum",         name:"Xtrackers MSCI World Momentum", isin:"IE00BL25JP72", pct:10, ticker:"XDEM", exchange:"IBIS2"},
@@ -628,7 +634,7 @@ function renderPlan(){
   if(noteEl){
     const nTrades=(pf.trades||[]).length;
     noteEl.innerHTML=pf.holdingsAsOf
-      ? `Holdings as of <b>${esc(pf.holdingsAsOf)}</b> · source: ${esc(pf.holdingsSource||'manual entry')}${nTrades?` · ${nTrades} imported trade${nTrades===1?'':'s'}`:''}`
+      ? `Positions as of <b>${esc(pf.holdingsAsOf)}</b> · source: ${esc(pf.holdingsSource||'manual entry')}${nTrades?` · ${nTrades} imported trade${nTrades===1?'':'s'}`:''}`
       : 'No holdings yet — type them in, paste them, or upload an IBKR document.';
   }
   const extra=Object.keys(pf.holdings).filter(i=>!pf.targets.some(t=>t.isin===i)&&pf.holdings[i].value>0);
@@ -645,6 +651,7 @@ function renderManual(){
   document.querySelectorAll('[data-v]').forEach(el=>el.addEventListener('input',e=>{
     const i=e.target.dataset.v,v=parseFloat(e.target.value); pf.holdings[i]=pf.holdings[i]||{}; pf.holdings[i].value=isNaN(v)?0:v;
     pf.holdingsAsOf=new Date().toISOString().slice(0,10);pf.holdings[i].valueDate=pf.holdingsAsOf;pf.holdingsSource='manual entry';
+    if(!(pf.holdings[i].qty>0))pf.holdings[i].priceDate=pf.holdingsAsOf;
     recordSnapshot(pf,pf.holdingsAsOf);saveState(); renderPlan();}));
   document.querySelectorAll('[data-p]').forEach(el=>el.addEventListener('input',e=>{
     const i=e.target.dataset.p,v=parseFloat(e.target.value); pf.holdings[i]=pf.holdings[i]||{}; pf.holdings[i].price=isNaN(v)?undefined:v;
@@ -708,7 +715,7 @@ function renderTrades(){
   document.querySelectorAll('[data-deltrade]').forEach(el=>el.onclick=e=>{
     const id=e.currentTarget.dataset.deltrade;
     pf.trades=(pf.trades||[]).filter(t=>t.id!==id);
-    Object.values(pf.holdings).forEach(h=>{if(h){h.cost=undefined;h.fees=undefined;h.valueDate='';h.priceDate='';}});
+    Object.values(pf.holdings).forEach(h=>{if(h){h.cost=undefined;h.fees=undefined;h.valueDate='';h.priceDate='';h.qtyDate='';}});
     rebuildFromTrades(pf);saveState();renderPerf();renderManual();renderPlan();});
   const clr=document.getElementById('clearTrades');
   if(clr)clr.onclick=()=>{
@@ -1073,12 +1080,12 @@ function rebuildFromTrades(pf){
   Object.keys(agg).forEach(isin=>{
     const a=agg[isin],h=pf.holdings[isin]||(pf.holdings[isin]={});
     h.cost=r2(a.cost); h.fees=r2(a.fees); h.tradeQty=r6(a.qty);
-    // trades only take over the value when they are newer than whatever set it last
-    if(!h.valueDate||h.valueDate<=a.date){
-      h.qty=r6(a.qty);
-      if(!(h.price>0)||!h.priceDate||h.priceDate<=a.date){h.price=a.price;h.priceDate=a.date;}
-      h.value=r2(a.qty*(h.price||0));
-      h.valueDate=a.date;
+    // share count and price age independently: a report can outrank trades on either
+    if(!h.qtyDate||h.qtyDate<=a.date){h.qty=r6(a.qty);h.qtyDate=a.date;}
+    if(!(h.price>0)||!h.priceDate||h.priceDate<=a.date){h.price=a.price;h.priceDate=a.date;}
+    if(h.qty>0&&h.price>0){
+      h.value=r2(h.qty*h.price);
+      h.valueDate=(h.priceDate>h.qtyDate?h.priceDate:h.qtyDate);
     }
   });
 }
@@ -1096,6 +1103,7 @@ function applyTrades(pf,list){
   saveState();
 }
 function refreshAfterImport(){
+  applyPricesInfo=applyPrices();renderPriceNote();
   renderManual();renderPlan();
   if(!document.getElementById('tab-perf').classList.contains('hide'))renderPerf();
   if(!document.getElementById('tab-charts').classList.contains('hide'))renderCharts();
@@ -1248,7 +1256,7 @@ function renderImportPreview(result,error){
     <div style="display:flex;gap:8px;margin-top:10px"><button class="primary" id="confirmImport">Confirm import</button><button class="ghost" id="cancelImport">Cancel</button></div></div>`;
   document.getElementById('confirmImport').onclick=()=>{
     const pf=active();pf.holdings=result.holdings;
-    Object.values(pf.holdings).forEach(h=>{h.valueDate=s.reportDate;h.priceDate=s.reportDate;});
+    Object.values(pf.holdings).forEach(h=>{h.valueDate=s.reportDate;h.priceDate=s.reportDate;h.qtyDate=s.reportDate;});
     pf.holdingsAsOf=s.reportDate;pf.holdingsSource='positions report';
     rebuildFromTrades(pf);recordSnapshot(pf,s.reportDate);saveState();pendingImport=null;
     document.getElementById('reportFile').value='';renderManual();renderPlan();
@@ -1273,6 +1281,74 @@ async function readReport(file){
     if(trades)return {kind:'trades',data:trades};
   }
   return {kind:'positions',data:parseReportCSV(text)};
+}
+
+
+// ---------- daily market prices (docs/prices.json, refreshed by GitHub Actions) ----------
+const PRICE_FILE='prices.json';
+let priceData=store.get('pr_prices',null);
+let priceState={busy:false,error:null,checked:store.get('pr_pricesChecked',null)};
+function applyPrices(){
+  if(!priceData||!priceData.prices)return {updated:0,missing:[],noQty:[]};
+  const asOf=priceData.as_of||'';
+  let updated=0;const noQty=new Set();
+  state.portfolios.forEach(pf=>{
+    let touched=false;
+    Object.keys(pf.holdings||{}).forEach(isin=>{
+      const quote=priceData.prices[isin],h=pf.holdings[isin];
+      if(!h||!quote||!(quote.price>0))return;
+      const day=quote.date||asOf;
+      if(h.priceDate&&h.priceDate>day)return;   // never move a price backwards in time
+      h.price=quote.price;h.priceDate=day;
+      if(h.qty>0){h.value=r2(h.qty*quote.price);h.valueDate=day;touched=true;updated++;}
+      else if(h.value>0)noQty.add(isin);
+    });
+    if(touched)recordSnapshot(pf,asOf);
+  });
+  const pf=active();
+  const missing=pf.targets.filter(t=>!priceData.prices[t.isin]).map(t=>t.sleeve);
+  if(updated)saveState();
+  return {updated,missing,noQty:[...noQty]};
+}
+function renderPriceNote(){
+  const el=document.getElementById('priceNote');if(!el)return;
+  if(priceState.busy){el.innerHTML='Fetching the latest closing prices…';return;}
+  if(!priceData){
+    el.innerHTML=priceState.error
+      ? `No price file yet (${esc(priceState.error)}). Values stay as you entered them.`
+      : 'No prices loaded yet — tap Update prices.';
+    return;
+  }
+  const info=applyPricesInfo||{missing:[],noQty:[]};
+  const today=new Date().toISOString().slice(0,10);
+  const age=Math.round((Date.parse(today)-Date.parse(priceData.as_of))/86400000);
+  const stale=age>4;
+  el.innerHTML=`Prices as of <b class="${stale?'stale':''}">${esc(priceData.as_of)}</b>`+
+    (stale?` (${age} days old)`:'')+` · ${esc((priceData.source||'').split(' - ')[0])}`+
+    (priceState.error?` · last check failed (${esc(priceState.error)})`:'')+
+    (info.missing.length?`<br>No price for ${esc(info.missing.join(', '))} — add the ISIN to <code>docs/instruments.json</code>.`:'')+
+    (info.noQty.length?`<br>${info.noQty.length} holding(s) have a value but no share count, so their value can't be repriced. Import a trade confirmation to fix that.`:'');
+}
+let applyPricesInfo=null;
+async function syncPrices(manual){
+  priceState.busy=true;priceState.error=null;renderPriceNote();
+  try{
+    const res=await fetch(PRICE_FILE+'?t='+Date.now(),{cache:'no-store'});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    if(!data||!data.prices||!Object.keys(data.prices).length)throw new Error('empty price file');
+    priceData=data;store.set('pr_prices',data);
+    priceState.checked=new Date().toISOString();store.set('pr_pricesChecked',priceState.checked);
+  }catch(err){
+    priceState.error=(err&&err.message)||String(err);   // offline: keep the cached prices
+  }
+  priceState.busy=false;
+  applyPricesInfo=applyPrices();
+  renderPriceNote();
+  renderManual();renderPlan();
+  if(!document.getElementById('tab-perf').classList.contains('hide'))renderPerf();
+  if(!document.getElementById('tab-charts').classList.contains('hide'))renderCharts();
+  if(manual&&priceState.error)alert('Could not reach the price file: '+priceState.error+'\nYour last known prices are still in use.');
 }
 
 // ---------- tabs ----------
@@ -1404,8 +1480,17 @@ function recordSnapshot(pf,date){
 document.getElementById('welcomeVersion').textContent = 'v'+APP_VERSION;
 document.getElementById('welcomeBtn').onclick=()=>{document.getElementById('welcomeScreen').classList.add('hide');};
 
+document.getElementById('refreshPrices').onclick=()=>syncPrices(true);
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible')return;
+  const last=priceState.checked?Date.parse(priceState.checked):0;
+  if(Date.now()-last>3*3600*1000)syncPrices(false);   // at most every 3 hours
+});
+
 // ---------- boot ----------
 refreshAll();
+applyPricesInfo=applyPrices();renderPriceNote();renderManual();renderPlan();
+syncPrices(false);
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{});}
 </script>
 </body>
