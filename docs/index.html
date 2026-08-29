@@ -166,6 +166,10 @@
   .tradeRow .tl small{display:block;color:var(--dim);font-size:11px}
   .tradeRow .tr{text-align:right;white-space:nowrap}
   .srcNote{color:var(--dim);font-size:12px;margin:8px 3px 0;line-height:1.5}
+  .chartCap{color:var(--dim);font-size:12.5px;line-height:1.55;margin-top:9px;min-height:36px}
+  .chartCap b{color:var(--txt)}
+  .chartWrap{touch-action:pan-y;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .chartWrap svg{display:block;width:100%;height:auto}
   .priceBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 3px 0}
   .priceBar .txt{flex:1;min-width:180px;color:var(--dim);font-size:12px;line-height:1.5}
   .priceBar button{padding:8px 12px;font-size:12.5px}
@@ -344,10 +348,13 @@
         <div class="stat" style="border:0;padding:0"><div class="label">Current drawdown</div><div class="value sm" id="ddNow">—</div></div>
         <div class="stat" style="border:0;padding:0"><div class="label">Max drawdown so far</div><div class="value sm" id="ddMax">—</div></div>
       </div>
-      <div id="ddChart" style="margin-top:12px"></div>
+      <div class="chartWrap" id="ddChart" style="margin-top:12px"></div>
+      <div class="chartCap" id="ddCap"></div>
+      <div id="ddActions"></div>
     </div>
-    <div class="help">The app records your total value each day you open it and charts the real drawdown from here on.
-      <b>Backdated</b> market history (before today) needs real price data this offline app can't fetch — use the local Python app or a price API for that.</div>
+    <div class="help">Drawdown is how far you are below your highest recorded value. Tap the chart to see any date.
+      History grows every day you open the app, and importing an older Activity Statement adds that date too —
+      so uploading a few past statements backfills the curve. Finish with the newest one.</div>
   </section>
 
   <!-- ============ PREDICT ============ -->
@@ -417,7 +424,22 @@
         <span><span class="dot" style="background:var(--accent)"></span>Current value</span>
       </div>
     </div>
-    <div class="help">This is your actual performance today: current holdings minus the deposits logged in the <b>Performance</b> tab. It contains no forecast.</div>
+    <div class="help">This is your actual performance today: current holdings minus what you put in. It contains no forecast.</div>
+
+    <h2>Value over time</h2>
+    <div class="card">
+      <div class="row">
+        <div class="stat" style="border:0;padding:0"><div class="label">Tracking since</div><div class="value sm" id="histSince">—</div></div>
+        <div class="stat" style="border:0;padding:0"><div class="label">Change over that period</div><div class="value sm" id="histChange">—</div></div>
+      </div>
+      <div class="chartWrap" id="histChart" style="margin-top:12px"></div>
+      <div class="chartCap" id="histCap"></div>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--accent)"></span>Portfolio value</span>
+        <span><span class="dot" style="background:var(--dim)"></span>Money put in</span>
+      </div>
+    </div>
+    <div class="help">Every dot is a day the app recorded your portfolio. Tap anywhere on the line to read that day's value, what you had invested by then, and the return.</div>
   </section>
 
 </div>
@@ -453,7 +475,7 @@
 </div>
 
 <script>
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.4.0';
 const DEFAULT_TARGETS = [
   {sleeve:"Core World",       name:"UBS Core MSCI World",           isin:"IE00BD4TXV59", pct:35, ticker:"UETW", exchange:"IBIS"},
   {sleeve:"Momentum",         name:"Xtrackers MSCI World Momentum", isin:"IE00BL25JP72", pct:10, ticker:"XDEM", exchange:"IBIS2"},
@@ -497,6 +519,7 @@ function hydrateState(s){
     });
     p.maxPositions=Math.max(1,Math.min(p.targets.length||1,+(p.maxPositions||DEFAULT_POSITION_COUNT)));
     p.snapshots=p.snapshots||[]; p.contributions=p.contributions||[]; p.trades=p.trades||[];
+    p.symbolMap=p.symbolMap||{};
     if(p.trades.length) rebuildFromTrades(p);
   });
   return s;
@@ -733,8 +756,9 @@ function renderTrades(){
   const clr=document.getElementById('clearTrades');
   if(clr)clr.onclick=()=>{
     if(!confirm('Remove all imported trades? This clears the cost basis, fees and share counts they created. Current values and logged deposits stay.'))return;
-    pf.trades=[];Object.values(pf.holdings).forEach(h=>{if(h){h.cost=undefined;h.fees=undefined;h.qty=undefined;h.tradeQty=undefined;}});
-    saveState();renderPerf();renderManual();renderPlan();};
+    pf.trades=[];Object.values(pf.holdings).forEach(h=>{if(h){h.cost=h.baseCost;h.fees=undefined;
+      h.qty=h.baseQty;h.tradeQty=undefined;h.qtyDate=h.baseDate||'';}});
+    rebuildFromTrades(pf);saveState();renderPerf();renderManual();renderPlan();};
 }
 function renderPerf(){
   const pf=active(); pf.contributions=pf.contributions||[];
@@ -764,16 +788,128 @@ function renderPerf(){
   renderInvestedSource();
   renderTrades();
   renderDeposits();
-  // drawdown from snapshots
-  const snaps=(pf.snapshots||[]).filter(s=>s.v>0);
-  let peak=0,mdd=0,cur=0;
-  snaps.forEach(s=>{ if(s.v>peak)peak=s.v; const dd=peak>0?(peak-s.v)/peak*100:0; if(dd>mdd)mdd=dd; });
-  if(snaps.length){ const last=snaps[snaps.length-1].v; cur=peak>0?(peak-last)/peak*100:0; }
-  document.getElementById('ddNow').textContent = snaps.length? '-'+cur.toFixed(1)+'%':'—';
-  document.getElementById('ddMax').textContent = snaps.length? '-'+mdd.toFixed(1)+'%':'—';
-  document.getElementById('ddChart').innerHTML = snaps.length>=2
-    ? lineChart(snaps.map((s,i)=>i), snaps.map(s=>s.v))
-    : '<div class="help" style="margin:0">A line will appear here after you open the app on a few different days.</div>';
+  renderDrawdownChart();
+}
+
+
+// ---------- tappable line charts ----------
+const CHART_W=720,CHART_H=210,CHART_PX=12,CHART_TOP=16,CHART_BOT=26;
+function chartX(i,n){return n<2?CHART_W/2:CHART_PX+i*(CHART_W-2*CHART_PX)/(n-1);}
+function buildChart(rows,lines,fillFirst){
+  const n=rows.length;
+  const values=[];
+  lines.forEach(l=>rows.forEach(r=>{const v=l.get(r);if(Number.isFinite(v))values.push(v);}));
+  if(lines.some(l=>l.zero))values.push(0);
+  let lo=Math.min(...values),hi=Math.max(...values);
+  if(!(hi>lo)){const s=Math.abs(hi)||1;hi+=s*0.02;lo-=s*0.02;}
+  const pad=(hi-lo)*0.14;lo-=pad;hi+=pad;
+  const Y=v=>CHART_TOP+(CHART_H-CHART_TOP-CHART_BOT)*(1-(v-lo)/(hi-lo));
+  let out='';
+  lines.forEach((l,li)=>{
+    const d=rows.map((r,i)=>`${i?'L':'M'}${chartX(i,n).toFixed(1)} ${Y(l.get(r)).toFixed(1)}`).join(' ');
+    if(li===0&&fillFirst){
+      out+=`<path d="${d} L${chartX(n-1,n).toFixed(1)} ${CHART_H-CHART_BOT} L${chartX(0,n).toFixed(1)} ${CHART_H-CHART_BOT} Z" fill="${l.color}" opacity=".12"/>`;
+    }
+    out+=`<path d="${d}" fill="none" stroke="${l.color}" stroke-width="${l.width||2.5}" stroke-linejoin="round" stroke-linecap="round"${l.dash?' stroke-dasharray="6 5"':''}/>`;
+  });
+  const marker=`<g id="mk" style="display:none"><line y1="${CHART_TOP-6}" y2="${CHART_H-CHART_BOT}" stroke="var(--dim)" stroke-width="1"/>`+
+    lines.map((l,i)=>`<circle r="4.5" fill="${l.color}" stroke="var(--card)" stroke-width="2" data-mk="${i}"/>`).join('')+`</g>`;
+  return {svg:`<svg viewBox="0 0 ${CHART_W} ${CHART_H}" width="100%" preserveAspectRatio="none">${out}${marker}
+    <text x="${CHART_PX}" y="${CHART_H-6}" fill="var(--dim)" font-size="11">${esc(fmtDay(rows[0].d))}</text>
+    <text x="${CHART_W-CHART_PX}" y="${CHART_H-6}" fill="var(--dim)" font-size="11" text-anchor="end">${esc(fmtDay(rows[n-1].d))}</text>
+    </svg>`, Y};
+}
+function bindChart(hostId,capId,rows,lines,Y,describe){
+  const host=document.getElementById(hostId),cap=document.getElementById(capId);
+  if(!host||!cap)return;
+  const svg=host.querySelector('svg');if(!svg)return;
+  const n=rows.length,mk=svg.querySelector('#mk');
+  const pick=ev=>{
+    const box=svg.getBoundingClientRect();
+    const px=((ev.touches?ev.touches[0].clientX:ev.clientX)-box.left)/box.width*CHART_W;
+    let best=0,bd=Infinity;
+    for(let i=0;i<n;i++){const d=Math.abs(chartX(i,n)-px);if(d<bd){bd=d;best=i;}}
+    const x=chartX(best,n);
+    mk.style.display='';
+    mk.querySelector('line').setAttribute('x1',x);mk.querySelector('line').setAttribute('x2',x);
+    mk.querySelectorAll('[data-mk]').forEach(c=>{
+      const l=lines[+c.getAttribute('data-mk')];
+      c.setAttribute('cx',x);c.setAttribute('cy',Y(l.get(rows[best])));
+    });
+    cap.innerHTML=describe(rows[best],best);
+  };
+  ['pointerdown','pointermove'].forEach(e=>host.addEventListener(e,ev=>{
+    if(e==='pointermove'&&ev.buttons===0&&ev.pointerType==='mouse')return;
+    pick(ev);
+  }));
+  host.addEventListener('touchmove',ev=>{pick(ev);ev.preventDefault();},{passive:false});
+  pick({clientX:1e6});                      // start on the most recent point
+}
+function renderHistoryChart(){
+  const pf=active(),rows=snapSeries(pf);
+  const host=document.getElementById('histChart'),cap=document.getElementById('histCap');
+  const since=document.getElementById('histSince'),change=document.getElementById('histChange');
+  if(!host)return;
+  if(rows.length<2){
+    host.innerHTML='';cap.innerHTML='';
+    since.textContent=rows.length?fmtDay(rows[0].d):'—';
+    change.textContent='—';change.className='value sm';
+    cap.innerHTML='Only '+rows.length+' day recorded so far. Open the app on another day, or import an older Activity Statement, and the line appears.';
+    return;
+  }
+  const first=rows[0],last=rows[rows.length-1];
+  const diff=last.v-first.v,pct=first.v>0?diff/first.v*100:0;
+  since.textContent=fmtDay(first.d);
+  change.textContent=`${eur2(diff)} · ${pctS(pct)}`;
+  change.className='value sm '+(diff>=0?'pos':'neg');
+  // Older snapshots pre-date the "invested" field: carry the nearest known figure across
+  // them so one missing value can't drag the whole line to zero.
+  const known=rows.filter(r=>r.c>0);
+  if(known.length){
+    let carry=known[0].c;
+    rows.forEach(r=>{ if(r.c>0)carry=r.c; else r.c=carry; });
+  }
+  const lines=[{get:r=>r.v,color:'var(--accent)'}];
+  if(known.length)lines.push({get:r=>r.c||0,color:'var(--dim)',dash:true,width:2});
+  const built=buildChart(rows,lines,true);
+  host.innerHTML=built.svg;
+  bindChart('histChart','histCap',rows,lines,built.Y,(r)=>{
+    const inv=r.c||0,gain=inv>0?r.v-inv:null;
+    return `<b>${esc(fmtDay(r.d))}</b> · value <b>${eur2(r.v)}</b>`+
+      (inv>0?`<br>put in ${eur2(inv)} · return <b class="${gain>=0?'pos':'neg'}">${eur2(gain)} · ${pctS(gain/inv*100)}</b>`:'');
+  });
+}
+function renderDrawdownChart(){
+  const pf=active(),snaps=snapSeries(pf);
+  const host=document.getElementById('ddChart'),cap=document.getElementById('ddCap');
+  const actions=document.getElementById('ddActions');
+  let peak=0,peakDate='';
+  const rows=snaps.map(s=>{
+    if(s.v>peak){peak=s.v;peakDate=s.d;}
+    return {d:s.d,v:s.v,dd:peak>0?(peak-s.v)/peak*100:0,peak,peakDate};
+  });
+  const worst=rows.reduce((a,r)=>r.dd>(a?a.dd:-1)?r:a,null);
+  document.getElementById('ddNow').textContent=rows.length?'-'+rows[rows.length-1].dd.toFixed(1)+'%':'—';
+  document.getElementById('ddMax').textContent=worst?'-'+worst.dd.toFixed(1)+'%':'—';
+  actions.innerHTML=snaps.length?`<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+    <button class="ghost danger" id="resetHistory">Reset history (${snaps.length} days)</button></div>`:'';
+  const reset=document.getElementById('resetHistory');
+  if(reset)reset.onclick=()=>{
+    if(!confirm('Clear the recorded history and start again from today? Holdings, trades and deposits are not affected.'))return;
+    pf.snapshots=[];recordSnapshot(pf,new Date().toISOString().slice(0,10));saveState();renderPerf();
+  };
+  if(rows.length<2){
+    host.innerHTML='';
+    cap.innerHTML=rows.length?'One day recorded. The curve starts once there are two.':'Nothing recorded yet.';
+    return;
+  }
+  const lines=[{get:r=>-r.dd,color:'var(--accent)',zero:true}];
+  const built=buildChart(rows,lines,true);
+  host.innerHTML=built.svg;
+  bindChart('ddChart','ddCap',rows,lines,built.Y,(r)=>
+    r.dd<0.005
+      ? `<b>${esc(fmtDay(r.d))}</b> · at a new high of <b>${eur2(r.v)}</b>`
+      : `<b>${esc(fmtDay(r.d))}</b> · <b class="neg">-${r.dd.toFixed(1)}%</b> below the peak<br>${eur2(r.v)} against ${eur2(r.peak)} reached on ${esc(fmtDay(r.peakDate))}`);
 }
 
 // ---------- prediction (Monte Carlo) ----------
@@ -923,6 +1059,7 @@ function renderCharts(){
   document.getElementById('chartValue').textContent=eur2(total);
   const gainEl=document.getElementById('chartGain');gainEl.textContent=invested>0?`${eur2(gain)} · ${pctS(gp)}`:'log deposits';gainEl.className='value sm '+(gain>=0?'pos':'neg');
   document.getElementById('performanceChart').innerHTML=performanceSVG(invested,total);
+  renderHistoryChart();
 }
 // ---------- paste ----------
 function normNum(tok){ const hasC=tok.includes(','),hasD=tok.includes('.');
@@ -1036,6 +1173,7 @@ function findTradeRows(text){
   return out.sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
 }
 function mapSymbolsToIsins(text,symbols,targets){
+  const known=(active().symbolMap)||{};
   const map={},at={};
   symbols.forEach(sym=>{at[sym]=[];const re=new RegExp('\\b'+escRe(sym)+'\\b','g');let m;
     while((m=re.exec(text)))at[sym].push(m.index);});
@@ -1046,6 +1184,7 @@ function mapSymbolsToIsins(text,symbols,targets){
     if(best&&!map[best])map[best]=im[1];
   }
   symbols.forEach(sym=>{ if(map[sym])return;
+    if(known[sym]){map[sym]=known[sym];return;}      // learned from an earlier document
     const t=(targets||[]).find(x=>(x.ticker||'').toUpperCase()===sym||(x.isin||'').toUpperCase()===sym);
     if(t)map[sym]=t.isin; });
   return map;
@@ -1066,7 +1205,7 @@ function parseTradeText(text,targets,existing){
   });
   const usable=trades.filter(t=>t.isin);
   const dates=rows.map(r=>r.date).sort();
-  return {trades:usable,unmapped:[...unmapped],summary:{
+  return {trades:usable,unmapped:[...unmapped],map,summary:{
     orders:rows.length,newTrades:usable.length,duplicates,symbols,
     cost:Math.round(usable.reduce((a,t)=>a+(t.side==='SELL'?-Math.abs(t.proceeds):tradeCostOf(t)),0)*100)/100,
     fees:Math.round(usable.reduce((a,t)=>a+Math.abs(t.comm||0)+Math.abs(t.fee||0),0)*100)/100,
@@ -1077,28 +1216,37 @@ function parseTradeText(text,targets,existing){
 function r2(n){return Math.round((n||0)*100)/100;}
 function r6(n){return Math.round((n||0)*1e6)/1e6;}
 function rebuildFromTrades(pf){
-  const agg={};
-  (pf.trades||[]).forEach(t=>{
-    if(!t.isin)return;
-    const a=agg[t.isin]||(agg[t.isin]={qty:0,cost:0,fees:0,price:0,date:'',stamp:''});
-    const fees=Math.abs(t.comm||0)+Math.abs(t.fee||0);
-    if(t.side==='SELL'){
-      const avg=a.qty>0?a.cost/a.qty:0,q=Math.min(a.qty,t.qty);
-      a.qty-=q;a.cost=Math.max(0,a.cost-avg*q);
-    }else{ a.qty+=t.qty;a.cost+=tradeCostOf(t); }
-    a.fees+=fees;
-    const stamp=(t.date||'')+(t.time||'');
-    if(stamp>=a.stamp){a.stamp=stamp;a.date=t.date||'';a.price=t.price;}
-  });
-  Object.keys(agg).forEach(isin=>{
-    const a=agg[isin],h=pf.holdings[isin]||(pf.holdings[isin]={});
-    h.cost=r2(a.cost); h.fees=r2(a.fees); h.tradeQty=r6(a.qty);
-    // share count and price age independently: a report can outrank trades on either
-    if(!h.qtyDate||h.qtyDate<=a.date){h.qty=r6(a.qty);h.qtyDate=a.date;}
-    if(!(h.price>0)||!h.priceDate||h.priceDate<=a.date){h.price=a.price;h.priceDate=a.date;}
+  const trades=(pf.trades||[]).filter(t=>t.isin);
+  const isins=new Set(trades.map(t=>t.isin));
+  Object.keys(pf.holdings||{}).forEach(i=>{if(pf.holdings[i]&&pf.holdings[i].baseDate)isins.add(i);});
+  isins.forEach(isin=>{
+    const h=pf.holdings[isin]||(pf.holdings[isin]={});
+    // A statement is a snapshot of everything owned on its date, so it is the baseline.
+    // Only trades dated after it are new information — earlier ones are already inside it.
+    const baseDate=h.baseDate||'';
+    let qty=baseDate?(h.baseQty||0):0, cost=baseDate?(h.baseCost||0):0;
+    let fees=0,price=0,stamp='',lastDate=baseDate,counted=0;
+    trades.filter(t=>t.isin===isin&&(!baseDate||(t.date||'')>baseDate))
+      .sort((a,b)=>((a.date||'')+(a.time||'')).localeCompare((b.date||'')+(b.time||'')))
+      .forEach(t=>{
+        counted++;
+        if(t.side==='SELL'){
+          const avg=qty>0?cost/qty:0,sold=Math.min(qty,t.qty);
+          qty-=sold;cost=Math.max(0,cost-avg*sold);
+        }else{ qty+=t.qty;cost+=tradeCostOf(t); }
+        fees+=Math.abs(t.comm||0)+Math.abs(t.fee||0);
+        const st=(t.date||'')+(t.time||'');
+        if(st>=stamp){stamp=st;price=t.price;lastDate=t.date||lastDate;}
+      });
+    if(!baseDate&&!counted)return;                 // nothing to say about this holding
+    h.tradeQty=r6(qty);
+    h.qty=r6(qty); h.qtyDate=lastDate||baseDate||'';
+    if(cost>0||baseDate)h.cost=r2(cost);
+    h.fees=r2(fees+(baseDate?0:0));
+    if(price>0&&(!h.priceDate||h.priceDate<=lastDate)){h.price=price;h.priceDate=lastDate;}
     if(h.qty>0&&h.price>0){
       h.value=r2(h.qty*h.price);
-      h.valueDate=(h.priceDate>h.qtyDate?h.priceDate:h.qtyDate);
+      h.valueDate=((h.priceDate||'')>(h.qtyDate||'')?h.priceDate:h.qtyDate);
     }
   });
 }
@@ -1142,6 +1290,7 @@ function renderTradePreview(host,parsed,onDone){
   const done=()=>{if(onDone)onDone();};
   const btn=document.getElementById('confirmTrades');
   if(btn)btn.onclick=()=>{
+    if(parsed.map)Object.assign(active().symbolMap,parsed.map);
     applyTrades(active(),parsed.trades);refreshAfterImport();done();
     host.innerHTML=`<div class="importSummary"><b>Imported ${s.newTrades} trade(s)</b>
       <div class="help" style="margin:5px 0 0">Holdings, cost basis, fees and the buy plan now include the document dated ${esc(s.date||'today')}.</div></div>`;
@@ -1201,7 +1350,7 @@ function parseActivityPositions(text){
     holdings[r.isin]={value:r2(r.value),price:r.price,qty:r.qty,cost:r2(r.cost),
       currency:'EUR',fx:1,symbol:r.symbol};
   });
-  return {holdings,warnings,summary:{rowsParsed:rows.length+ignored,matched,unmatched,
+  return {holdings,warnings,symbolMap:map,summary:{rowsParsed:rows.length+ignored,matched,unmatched,
     ignored,total,reportDate:date}};
 }
 
@@ -1325,7 +1474,11 @@ function renderImportPreview(result,error){
     <div style="display:flex;gap:8px;margin-top:10px"><button class="primary" id="confirmImport">Confirm import</button><button class="ghost" id="cancelImport">Cancel</button></div></div>`;
   document.getElementById('confirmImport').onclick=()=>{
     const pf=active();pf.holdings=result.holdings;
-    Object.values(pf.holdings).forEach(h=>{h.valueDate=s.reportDate;h.priceDate=s.reportDate;h.qtyDate=s.reportDate;});
+    Object.values(pf.holdings).forEach(h=>{
+      h.valueDate=s.reportDate;h.priceDate=s.reportDate;h.qtyDate=s.reportDate;
+      h.baseQty=h.qty;h.baseCost=h.cost;h.baseDate=s.reportDate;   // trades after this date add to it
+    });
+    if(result.symbolMap)Object.assign(pf.symbolMap,result.symbolMap);
     pf.holdingsAsOf=s.reportDate;
     pf.holdingsAsOf=s.reportDate;pf.holdingsSource='positions report';
     rebuildFromTrades(pf);recordSnapshot(pf,s.reportDate);saveState();pendingImport=null;
@@ -1385,7 +1538,7 @@ function applyPrices(){
       if(h.qty>0){h.value=r2(h.qty*quote.price);h.valueDate=day;touched=true;updated++;}
       else if(h.value>0)noQty.add(isin);
     });
-    if(touched)recordSnapshot(pf,asOf);
+    if(touched)recordSnapshot(pf,priceData.as_of||asOf);
   });
   const pf=active();
   const missing=pf.targets.filter(t=>!priceData.prices[t.isin]).map(t=>t.sleeve);
@@ -1559,11 +1712,25 @@ document.getElementById('saveTargets').onclick=()=>{const clean=draft.filter(t=>
 document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeEdit();});
 
 // ---------- dated snapshots for drawdown-to-date ----------
+// Every holding counts here, including ones outside your target sleeves — otherwise
+// correcting an ISIN would look like a crash rather than a bookkeeping fix.
+function portfolioValue(pf){
+  return r2(Object.values(pf.holdings||{}).reduce((s,h)=>s+((h&&h.value)||0),0));
+}
 function recordSnapshot(pf,date){
-  const total=totalValue(pf);if(!(total>0)||!date)return;
+  const total=portfolioValue(pf);if(!(total>0)||!date)return;
+  const invested=r2(contribTotal(pf));
   pf.snapshots=pf.snapshots||[];const existing=pf.snapshots.find(s=>s.d===date);
-  if(existing)existing.v=Math.round(total*100)/100;else pf.snapshots.push({d:date,v:Math.round(total*100)/100});
+  if(existing){existing.v=r2(total);existing.c=invested;}
+  else pf.snapshots.push({d:date,v:r2(total),c:invested});
   pf.snapshots.sort((a,b)=>a.d.localeCompare(b.d));while(pf.snapshots.length>400)pf.snapshots.shift();
+}
+function snapSeries(pf){
+  return (pf.snapshots||[]).filter(s=>s&&s.v>0).sort((a,b)=>a.d.localeCompare(b.d));
+}
+function fmtDay(d){
+  const t=Date.parse(d);
+  return isNaN(t)?String(d):new Date(t).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
 }
 (function snapshot(){const pf=active();recordSnapshot(pf,pf.holdingsAsOf||new Date().toISOString().slice(0,10));saveState();})();
 
