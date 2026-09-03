@@ -1,5 +1,5 @@
 /* Portfolio Rebalancer — service worker (offline app shell) */
-const CACHE = 'portfolio-rebalancer-v2.4.0';
+const CACHE = 'portfolio-rebalancer-v2.5.0';
 const ASSETS = [
   './',
   './index.html',
@@ -22,19 +22,29 @@ self.addEventListener('activate', e => {
   );
 });
 
+// Network-first with a cached fallback: for anything that changes between releases.
+function fresh(request, key) {
+  return fetch(request).then(res => {
+    const copy = res.clone();
+    caches.open(CACHE).then(c => c.put(key, copy)).catch(() => {});
+    return res;
+  }).catch(() => caches.match(key).then(hit => hit || caches.match('./index.html')));
+}
+
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  // Prices change daily: always try the network first, fall back to the last copy.
-  if (url.pathname.endsWith('/prices.json') || url.pathname.endsWith('prices.json')) {
-    e.respondWith(
-      fetch(e.request).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put('./prices.json', copy)).catch(() => {});
-        return res;
-      }).catch(() => caches.match('./prices.json'))
-    );
+  if (e.request.method !== 'GET') return;
+
+  // Prices and the instrument map change daily — always try the network first.
+  if (url.pathname.endsWith('prices.json'))      { e.respondWith(fresh(e.request, './prices.json')); return; }
+  if (url.pathname.endsWith('instruments.json')) { e.respondWith(fresh(e.request, './instruments.json')); return; }
+
+  // The page itself: network-first, so a new version is picked up as soon as it is published.
+  if (e.request.mode === 'navigate' || url.pathname.endsWith('/') || url.pathname.endsWith('index.html')) {
+    e.respondWith(fresh(e.request, './index.html'));
     return;
   }
+
   // Everything else is a static app shell: cache-first, fall back to network.
   e.respondWith(caches.match(e.request).then(hit => hit || fetch(e.request)));
 });

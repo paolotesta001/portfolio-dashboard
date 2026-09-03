@@ -173,7 +173,7 @@
   .priceBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 3px 0}
   .priceBar .txt{flex:1;min-width:180px;color:var(--dim);font-size:12px;line-height:1.5}
   .priceBar button{padding:8px 12px;font-size:12.5px}
-  .priceBar .stale{color:var(--amber)}
+  .priceBar .stale{color:var(--amber)} .priceBar .ok{color:var(--green)}
   .welcome{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;padding:32px max(24px,env(safe-area-inset-left))}
   .welcome-logo{width:88px;height:88px;border-radius:22px;margin-bottom:22px}
@@ -475,7 +475,7 @@
 </div>
 
 <script>
-const APP_VERSION = '2.4.0';
+const APP_VERSION = '2.5.0';
 const DEFAULT_TARGETS = [
   {sleeve:"Core World",       name:"UBS Core MSCI World",           isin:"IE00BD4TXV59", pct:35, ticker:"UETW", exchange:"IBIS"},
   {sleeve:"Momentum",         name:"Xtrackers MSCI World Momentum", isin:"IE00BL25JP72", pct:10, ticker:"XDEM", exchange:"IBIS2"},
@@ -1513,8 +1513,21 @@ async function readReport(file){
 
 // ---------- daily market prices (docs/prices.json, refreshed by GitHub Actions) ----------
 const PRICE_FILE='prices.json';
+const INSTRUMENT_FILE='instruments.json';
+const YAHOO=s=>'https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(s)+'?range=5d&interval=1d';
+// Yahoo sends no CORS header, so the browser needs a read-only public relay.
+// The first relay that answers is used for the whole batch; if none answer we
+// fall back to the prices.json committed by the GitHub Action.
+const PRICE_RELAYS=[
+  u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u),
+  u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u),
+  u=>'https://api.cors.lol/?url='+encodeURIComponent(u),
+  u=>'https://corsproxy.io/?url='+encodeURIComponent(u),
+  u=>u                                      // direct, in case CORS is ever allowed
+];
 let priceData=store.get('pr_prices',null);
-let priceState={busy:false,error:null,checked:store.get('pr_pricesChecked',null)};
+let priceState={busy:false,error:null,checked:store.get('pr_pricesChecked',null),
+                live:store.get('pr_pricesLive',false),progress:'',failed:[]};
 function applyPrices(){
   if(!priceData||!priceData.prices)return {updated:0,missing:[],noQty:[]};
   const asOf=priceData.as_of||'';
@@ -1547,7 +1560,7 @@ function applyPrices(){
 }
 function renderPriceNote(){
   const el=document.getElementById('priceNote');if(!el)return;
-  if(priceState.busy){el.innerHTML='Fetching the latest closing prices…';return;}
+  if(priceState.busy){el.innerHTML=esc(priceState.progress||'Fetching the latest prices…');return;}
   if(!priceData){
     el.innerHTML=priceState.error
       ? `No price file yet (${esc(priceState.error)}). Values stay as you entered them.`
@@ -1560,33 +1573,143 @@ function renderPriceNote(){
   const stale=age>4;
   el.innerHTML=`Prices as of <b class="${stale?'stale':''}">${esc(priceData.as_of)}</b>`+
     (stale?` (${age} days old)`:'')+` · ${esc((priceData.source||'').split(' - ')[0])}`+
+    (priceState.live?` · <b class="ok">live</b>`:'')+
     (priceState.error?` · last check failed (${esc(priceState.error)})`:'')+
+    (priceState.failed&&priceState.failed.length?`<br>No live quote for ${esc(priceState.failed.join(', '))} — the last known price is still in use.`:'')+
     (info.missing.length?`<br>No price for ${esc(info.missing.join(', '))} — add the ISIN to <code>docs/instruments.json</code>.`:'')+
     (info.noQty.length?`<br>${info.noQty.length} holding(s) have a value but no share count, so their value can't be repriced. Import a statement to fix that.`:'')+
     ((info.suspect||[]).length?`<br><b class="stale">Price rejected:</b> ${esc(info.suspect.join('; '))}. Check that ISIN's symbol in <code>docs/instruments.json</code>.`:'');
 }
 let applyPricesInfo=null;
-async function syncPrices(manual){
-  priceState.busy=true;priceState.error=null;renderPriceNote();
+
+const napTime=ms=>new Promise(r=>setTimeout(r,ms));
+async function getJSON(url,ms){
+  const ctl=('AbortController' in window)?new AbortController():null;
+  const timer=ctl?setTimeout(()=>ctl.abort(),ms||12000):null;
   try{
-    const res=await fetch(PRICE_FILE+'?t='+Date.now(),{cache:'no-store'});
+    const res=await fetch(url,ctl?{cache:'no-store',signal:ctl.signal}:{cache:'no-store'});
     if(!res.ok)throw new Error('HTTP '+res.status);
-    const data=await res.json();
+    return await res.json();
+  }finally{if(timer)clearTimeout(timer);}
+}
+// The price file the GitHub Action commits — used for the symbol list and as a fallback.
+async function loadPriceFile(){
+  try{
+    const data=await getJSON(PRICE_FILE+'?t='+Date.now(),10000);
     if(!data||!data.prices||!Object.keys(data.prices).length)throw new Error('empty price file');
-    priceData=data;store.set('pr_prices',data);
-    priceState.checked=new Date().toISOString();store.set('pr_pricesChecked',priceState.checked);
-  }catch(err){
-    priceState.error=(err&&err.message)||String(err);   // offline: keep the cached prices
+    return data;
+  }catch(err){return null;}
+}
+// ISIN -> Yahoo symbol, from instruments.json, topped up with whatever the price file knows.
+async function loadSymbols(file){
+  const map={};
+  [ (priceData&&priceData.prices)||{}, (file&&file.prices)||{} ].forEach(src=>{
+    Object.keys(src).forEach(isin=>{if(src[isin]&&src[isin].symbol)map[isin]=src[isin].symbol;});
+  });
+  try{
+    const inst=await getJSON(INSTRUMENT_FILE+'?t='+Date.now(),8000);
+    Object.keys(inst||{}).forEach(isin=>{if(inst[isin])map[isin]=inst[isin];});
+  }catch(err){}
+  return map;
+}
+function readQuote(json){
+  const r=json&&json.chart&&json.chart.result&&json.chart.result[0];
+  const meta=r&&r.meta;
+  if(!meta)throw new Error('unexpected response');
+  const price=meta.regularMarketPrice||meta.chartPreviousClose;
+  if(!(price>0))throw new Error('no price in response');
+  const stamp=meta.regularMarketTime?new Date(meta.regularMarketTime*1000):new Date();
+  return {price:Math.round(price*10000)/10000,currency:meta.currency||'',
+          symbol:meta.symbol||'',date:stamp.toISOString().slice(0,10)};
+}
+// One quote per instrument, straight from the browser. Sequential and gentle:
+// the free relays reject bursts of parallel requests.
+async function fetchLive(symbols,onProgress){
+  const isins=Object.keys(symbols);
+  if(!isins.length)throw new Error('no instrument symbols to price');
+  let relay=null,firstQuote=null,lastErr=null;
+  for(const r of PRICE_RELAYS){
+    try{ firstQuote=readQuote(await getJSON(r(YAHOO(symbols[isins[0]])),12000)); relay=r; break; }
+    catch(err){ lastErr=err; }
   }
-  priceState.busy=false;
+  if(!relay)throw new Error('no quote source reachable ('+((lastErr&&lastErr.message)||'unknown')+')');
+  const out={},failed=[];
+  out[isins[0]]=firstQuote;
+  onProgress&&onProgress(1,isins.length);
+  for(let i=1;i<isins.length;i++){
+    const isin=isins[i];
+    try{
+      await napTime(200);
+      out[isin]=readQuote(await getJSON(relay(YAHOO(symbols[isin])),12000));
+    }catch(err){ failed.push(symbols[isin]||isin); }
+    onProgress&&onProgress(i+1,isins.length);
+  }
+  if(!Object.keys(out).length)throw new Error('every quote failed');
+  return {prices:out,failed};
+}
+function priceBtn(busy){
+  const b=document.getElementById('refreshPrices');if(!b)return;
+  b.disabled=!!busy;b.textContent=busy?'… Updating':'↻ Update prices';
+}
+async function syncPrices(manual){
+  if(priceState.busy)return;
+  // A live pull takes ~25s, so on a normal page open reuse a check made in the last 2 hours.
+  const lastCheck=priceState.checked?Date.parse(priceState.checked):0;
+  if(!manual&&priceState.live&&Date.now()-lastCheck<2*3600*1000)return;
+  priceState.busy=true;priceState.error=null;priceState.progress='Fetching the latest prices…';
+  priceBtn(true);renderPriceNote();
+  const file=await loadPriceFile();
+  let live=null,liveErr=null;
+  try{
+    const symbols=await loadSymbols(file);
+    live=await fetchLive(symbols,(done,total)=>{
+      priceState.progress=`Fetching live quotes… ${done}/${total}`;renderPriceNote();
+    });
+  }catch(err){ liveErr=(err&&err.message)||String(err); }
+
+  const merged=JSON.parse(JSON.stringify(file||priceData||{prices:{}}));
+  merged.prices=merged.prices||{};
+  let liveCount=0;const rejected=[];
+  if(live){
+    Object.keys(live.prices).forEach(isin=>{
+      const q=live.prices[isin];
+      const known=(merged.prices[isin]||{}).currency||'EUR';
+      if(q.currency&&q.currency!=='EUR'){        // a non-euro listing would corrupt the maths
+        rejected.push(`${q.symbol||isin} quotes in ${q.currency}`);return;
+      }
+      merged.prices[isin]={price:q.price,currency:q.currency||known,
+                           symbol:q.symbol||(merged.prices[isin]||{}).symbol||'',date:q.date};
+      liveCount++;
+    });
+  }
+  const days=Object.values(merged.prices).map(p=>p&&p.date).filter(Boolean);
+  if(days.length)merged.as_of=days.sort().slice(-1)[0];
+  merged.updated=new Date().toISOString();
+  merged.currency='EUR';
+  merged.source=liveCount
+    ? 'Yahoo Finance (live from your browser) - last traded price, may be intraday'
+    : (merged.source||'Yahoo Finance - closing price on the listed exchange');
+
+  if(liveCount||file){
+    priceData=merged;store.set('pr_prices',merged);
+    priceState.checked=new Date().toISOString();store.set('pr_pricesChecked',priceState.checked);
+    priceState.live=!!liveCount;store.set('pr_pricesLive',priceState.live);
+    priceState.failed=((live&&live.failed)||[]).concat(rejected);
+    priceState.error=liveCount?null:('live quotes unavailable: '+(liveErr||'unknown'));
+  }else{
+    priceState.error=liveErr||'price file unreachable';   // offline: keep the cached prices
+    priceState.failed=[];
+  }
+  priceState.busy=false;priceState.progress='';priceBtn(false);
   applyPricesInfo=applyPrices();
   renderPriceNote();
   renderManual();renderPlan();
   if(!document.getElementById('tab-perf').classList.contains('hide'))renderPerf();
   if(!document.getElementById('tab-charts').classList.contains('hide'))renderCharts();
-  if(manual&&priceState.error)alert('Could not reach the price file: '+priceState.error+'\nYour last known prices are still in use.');
+  if(manual&&!liveCount)alert('Could not fetch live quotes ('+(liveErr||'unknown')+').\n'
+    +(file?'The daily price file was used instead — prices as of '+merged.as_of+'.'
+          :'Your last known prices are still in use.'));
 }
-
 // ---------- tabs ----------
 function showTab(name){
   ['plan','perf','predict','charts'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hide',t!==name));
