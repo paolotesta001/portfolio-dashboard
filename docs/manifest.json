@@ -1,7 +1,7 @@
 {
   "name": "Portfolio Rebalancer",
   "short_name": "Rebalance",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "See how your ETF portfolio has drifted from target and know exactly what to buy each month.",
   "start_url": "./index.html",
   "scope": "./",

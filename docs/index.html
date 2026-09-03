@@ -475,7 +475,7 @@
 </div>
 
 <script>
-const APP_VERSION = '2.5.0';
+const APP_VERSION = '2.5.1';
 const DEFAULT_TARGETS = [
   {sleeve:"Core World",       name:"UBS Core MSCI World",           isin:"IE00BD4TXV59", pct:35, ticker:"UETW", exchange:"IBIS"},
   {sleeve:"Momentum",         name:"Xtrackers MSCI World Momentum", isin:"IE00BL25JP72", pct:10, ticker:"XDEM", exchange:"IBIS2"},
@@ -1514,20 +1514,24 @@ async function readReport(file){
 // ---------- daily market prices (docs/prices.json, refreshed by GitHub Actions) ----------
 const PRICE_FILE='prices.json';
 const INSTRUMENT_FILE='instruments.json';
+// Primary source: onvista's public API. It is keyed by ISIN, quotes every German
+// venue in EUR, and — unlike Yahoo — sends "access-control-allow-origin: *",
+// so the browser can call it directly with no relay in the middle.
+const OV_API='https://api.onvista.de/api/v1';
+const OV_MARKETS=['_GER','_MIL','_TRO','_FRA','_LSX','_GAT','_QUO'];   // Xetra first
+// Fallback: Yahoo through a public read-only relay (Yahoo sends no CORS header).
 const YAHOO=s=>'https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(s)+'?range=5d&interval=1d';
-// Yahoo sends no CORS header, so the browser needs a read-only public relay.
-// The first relay that answers is used for the whole batch; if none answer we
-// fall back to the prices.json committed by the GitHub Action.
 const PRICE_RELAYS=[
   u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u),
   u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u),
   u=>'https://api.cors.lol/?url='+encodeURIComponent(u),
-  u=>'https://corsproxy.io/?url='+encodeURIComponent(u),
   u=>u                                      // direct, in case CORS is ever allowed
 ];
 let priceData=store.get('pr_prices',null);
+let ovIds=store.get('pr_ovIds',{});         // ISIN -> "FUND/66036063", resolved once then cached
 let priceState={busy:false,error:null,checked:store.get('pr_pricesChecked',null),
-                live:store.get('pr_pricesLive',false),progress:'',failed:[]};
+                live:store.get('pr_pricesLive',false),source:store.get('pr_pricesVia',''),
+                progress:'',failed:[]};
 function applyPrices(){
   if(!priceData||!priceData.prices)return {updated:0,missing:[],noQty:[]};
   const asOf=priceData.as_of||'';
@@ -1592,7 +1596,7 @@ async function getJSON(url,ms){
     return await res.json();
   }finally{if(timer)clearTimeout(timer);}
 }
-// The price file the GitHub Action commits — used for the symbol list and as a fallback.
+// The price file the GitHub Action commits — used for the symbol list and as a last resort.
 async function loadPriceFile(){
   try{
     const data=await getJSON(PRICE_FILE+'?t='+Date.now(),10000);
@@ -1612,7 +1616,70 @@ async function loadSymbols(file){
   }catch(err){}
   return map;
 }
-function readQuote(json){
+
+// ---- source 1: onvista, by ISIN, no relay ----
+async function ovResolve(isin){
+  if(ovIds[isin])return ovIds[isin];
+  const r=await getJSON(OV_API+'/instruments/query?searchValue='+encodeURIComponent(isin),10000);
+  const list=(r&&r.list)||[];
+  const hit=list.find(x=>x&&x.isin===isin&&x.entityValue)||list[0];
+  if(!hit||!hit.entityValue||!hit.entityType)throw new Error('ISIN not found');
+  ovIds[isin]=hit.entityType+'/'+hit.entityValue;store.set('pr_ovIds',ovIds);
+  return ovIds[isin];
+}
+function ovPick(snap){
+  const list=((snap&&snap.quoteList&&snap.quoteList.list)||[])
+    .filter(q=>q&&q.isoCurrency==='EUR'&&q.last>0);
+  if(!list.length)throw new Error('no euro quote');
+  const rank=q=>{const c=(q.market||{}).codeMarket;const i=OV_MARKETS.indexOf(c);return i<0?99:i;};
+  list.sort((a,b)=>rank(a)-rank(b));
+  const q=list[0];
+  return {price:Math.round(q.last*10000)/10000,currency:'EUR',symbol:'',
+          date:(q.datetimeLast||'').slice(0,10)||new Date().toISOString().slice(0,10)};
+}
+async function fetchViaOnvista(isins,onProgress){
+  const out={},failed=[];
+  for(let i=0;i<isins.length;i++){
+    const isin=isins[i];
+    try{
+      const path=await ovResolve(isin);
+      out[isin]=ovPick(await getJSON(OV_API+'/instruments/'+path+'/snapshot',12000));
+    }catch(err){
+      failed.push(isin);
+      delete ovIds[isin];store.set('pr_ovIds',ovIds);   // a bad id shouldn't stick around
+    }
+    onProgress&&onProgress(i+1,isins.length);
+    await napTime(60);
+  }
+  if(!Object.keys(out).length)throw new Error('onvista returned nothing');
+  return {prices:out,failed};
+}
+
+// ---- source 2: Yahoo through a relay (sequential; the free relays reject bursts) ----
+async function fetchViaYahoo(symbols,isins,onProgress){
+  if(!isins.length)throw new Error('nothing to fetch');
+  let relay=null,firstQuote=null,lastErr=null;
+  for(const r of PRICE_RELAYS){
+    if(!symbols[isins[0]])break;
+    try{ firstQuote=readYahoo(await getJSON(r(YAHOO(symbols[isins[0]])),12000)); relay=r; break; }
+    catch(err){ lastErr=err; }
+  }
+  if(!relay)throw new Error('no relay reachable ('+((lastErr&&lastErr.message)||'unknown')+')');
+  const out={},failed=[];
+  out[isins[0]]=firstQuote;
+  onProgress&&onProgress(1,isins.length);
+  for(let i=1;i<isins.length;i++){
+    const isin=isins[i];
+    try{
+      await napTime(200);
+      if(!symbols[isin])throw new Error('no symbol');
+      out[isin]=readYahoo(await getJSON(relay(YAHOO(symbols[isin])),12000));
+    }catch(err){ failed.push(isin); }
+    onProgress&&onProgress(i+1,isins.length);
+  }
+  return {prices:out,failed};
+}
+function readYahoo(json){
   const r=json&&json.chart&&json.chart.result&&json.chart.result[0];
   const meta=r&&r.meta;
   if(!meta)throw new Error('unexpected response');
@@ -1622,38 +1689,36 @@ function readQuote(json){
   return {price:Math.round(price*10000)/10000,currency:meta.currency||'',
           symbol:meta.symbol||'',date:stamp.toISOString().slice(0,10)};
 }
-// One quote per instrument, straight from the browser. Sequential and gentle:
-// the free relays reject bursts of parallel requests.
+
+// onvista first; anything it misses is retried through Yahoo before giving up.
 async function fetchLive(symbols,onProgress){
   const isins=Object.keys(symbols);
-  if(!isins.length)throw new Error('no instrument symbols to price');
-  let relay=null,firstQuote=null,lastErr=null;
-  for(const r of PRICE_RELAYS){
-    try{ firstQuote=readQuote(await getJSON(r(YAHOO(symbols[isins[0]])),12000)); relay=r; break; }
-    catch(err){ lastErr=err; }
-  }
-  if(!relay)throw new Error('no quote source reachable ('+((lastErr&&lastErr.message)||'unknown')+')');
-  const out={},failed=[];
-  out[isins[0]]=firstQuote;
-  onProgress&&onProgress(1,isins.length);
-  for(let i=1;i<isins.length;i++){
-    const isin=isins[i];
+  if(!isins.length)throw new Error('no instruments to price');
+  let result=null,via='',err=null;
+  try{ result=await fetchViaOnvista(isins,onProgress); via='onvista'; }
+  catch(e){ err=e; }
+  if(!result){
+    result=await fetchViaYahoo(symbols,isins,onProgress);   // throws if this fails too
+    via='Yahoo Finance';
+  }else if(result.failed.length){
     try{
-      await napTime(200);
-      out[isin]=readQuote(await getJSON(relay(YAHOO(symbols[isin])),12000));
-    }catch(err){ failed.push(symbols[isin]||isin); }
-    onProgress&&onProgress(i+1,isins.length);
+      const top=await fetchViaYahoo(symbols,result.failed.slice(),null);
+      Object.assign(result.prices,top.prices);
+      result.failed=top.failed;
+      if(Object.keys(top.prices).length)via='onvista + Yahoo Finance';
+    }catch(e){}
   }
-  if(!Object.keys(out).length)throw new Error('every quote failed');
-  return {prices:out,failed};
+  result.via=via;result.firstError=err&&err.message;
+  return result;
 }
+
 function priceBtn(busy){
   const b=document.getElementById('refreshPrices');if(!b)return;
   b.disabled=!!busy;b.textContent=busy?'… Updating':'↻ Update prices';
 }
 async function syncPrices(manual){
   if(priceState.busy)return;
-  // A live pull takes ~25s, so on a normal page open reuse a check made in the last 2 hours.
+  // Reuse a recent check on a normal page open; the button always forces a fresh pull.
   const lastCheck=priceState.checked?Date.parse(priceState.checked):0;
   if(!manual&&priceState.live&&Date.now()-lastCheck<2*3600*1000)return;
   priceState.busy=true;priceState.error=null;priceState.progress='Fetching the latest prices…';
@@ -1672,13 +1737,12 @@ async function syncPrices(manual){
   let liveCount=0;const rejected=[];
   if(live){
     Object.keys(live.prices).forEach(isin=>{
-      const q=live.prices[isin];
-      const known=(merged.prices[isin]||{}).currency||'EUR';
+      const q=live.prices[isin],known=merged.prices[isin]||{};
       if(q.currency&&q.currency!=='EUR'){        // a non-euro listing would corrupt the maths
         rejected.push(`${q.symbol||isin} quotes in ${q.currency}`);return;
       }
-      merged.prices[isin]={price:q.price,currency:q.currency||known,
-                           symbol:q.symbol||(merged.prices[isin]||{}).symbol||'',date:q.date};
+      merged.prices[isin]={price:q.price,currency:'EUR',
+                           symbol:q.symbol||known.symbol||'',date:q.date};
       liveCount++;
     });
   }
@@ -1687,14 +1751,15 @@ async function syncPrices(manual){
   merged.updated=new Date().toISOString();
   merged.currency='EUR';
   merged.source=liveCount
-    ? 'Yahoo Finance (live from your browser) - last traded price, may be intraday'
+    ? ((live.via||'live')+' - last traded price, may be intraday')
     : (merged.source||'Yahoo Finance - closing price on the listed exchange');
 
   if(liveCount||file){
     priceData=merged;store.set('pr_prices',merged);
     priceState.checked=new Date().toISOString();store.set('pr_pricesChecked',priceState.checked);
     priceState.live=!!liveCount;store.set('pr_pricesLive',priceState.live);
-    priceState.failed=((live&&live.failed)||[]).concat(rejected);
+    priceState.source=liveCount?(live.via||''):'';store.set('pr_pricesVia',priceState.source);
+    priceState.failed=(live?live.failed:[]).concat(rejected);
     priceState.error=liveCount?null:('live quotes unavailable: '+(liveErr||'unknown'));
   }else{
     priceState.error=liveErr||'price file unreachable';   // offline: keep the cached prices
