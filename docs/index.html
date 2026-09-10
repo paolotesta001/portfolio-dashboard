@@ -99,6 +99,9 @@
     letter-spacing:.45px;white-space:nowrap}
   .ticketGrid .metric .val{display:block;font-size:13px;font-weight:700;white-space:nowrap;margin-top:2px}
   .ticketGrid .metric.primary .val{font-size:24px;color:var(--green);line-height:1.15}
+  .ticketGrid .metric.primary input{font-size:20px;color:var(--green);padding:5px 8px}
+  .ticketGrid .hint button{background:none;border:0;padding:0;color:var(--accent);font:inherit;cursor:pointer;text-decoration:underline}
+  .ticketWarn button{background:none;border:0;padding:0;color:var(--accent);font:inherit;font-weight:700;cursor:pointer;text-decoration:underline}
   .ticketGrid input{padding:7px 8px;font-size:15px;font-weight:700;margin-top:3px;text-align:right}
   .ticketGrid .hint{display:block;color:var(--dim);font-size:10px;line-height:1.3;margin-top:4px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -305,7 +308,7 @@
       </table></div>
     </div>
     <div id="unmapped"></div>
-    <div class="help">Choose how many of the most-underweight positions to open. Allocations rebalance with new money only; whole shares use the ask you type in each ticket (the last fetched price if left blank), and each ticket's rounding remainder carries to the next one.</div>
+    <div class="help">Choose how many of the most-underweight positions to open. Allocations rebalance with new money only; whole shares use the ask you type in each ticket (the last fetched price if left blank), and each ticket's rounding remainder carries to the next one. Type a share count to override a ticket; the rest of the money is re-spread over the other tickets.</div>
   </section>
 
   <!-- ============ PERFORMANCE ============ -->
@@ -485,7 +488,7 @@
 </div>
 
 <script>
-const APP_VERSION = '2.6.0';
+const APP_VERSION = '2.6.1';
 const DEFAULT_TARGETS = [
   {sleeve:"Core World",       name:"UBS Core MSCI World",           isin:"IE00BD4TXV59", pct:35, ticker:"UETW", exchange:"IBIS"},
   {sleeve:"Momentum",         name:"Xtrackers MSCI World Momentum", isin:"IE00BL25JP72", pct:10, ticker:"XDEM", exchange:"IBIS2"},
@@ -541,8 +544,8 @@ function active(){ return state.portfolios.find(p=>p.id===state.active) || state
 const ticketStates={};
 function ticketState(){
   const id=active().id;
-  const s=ticketStates[id]||(ticketStates[id]={asks:{},comms:{},skipped:{}});
-  s.comms=s.comms||{};
+  const s=ticketStates[id]||(ticketStates[id]={asks:{},comms:{},shares:{},skipped:{}});
+  s.comms=s.comms||{};s.shares=s.shares||{};
   return s;
 }
 
@@ -618,20 +621,32 @@ function askFor(pf,isin){
   if(h.price>0) return {ask:+h.price,src:'last',date:h.priceDate||''};
   return null;
 }
-// Whole shares per ticket. Each ticket's rounding remainder carries into the next
-// ticket's budget; whatever is left at the end buys extra shares where one still fits,
-// and only the final remainder becomes roll-over cash.
+function manualShares(isin){const v=String(ticketState().shares[isin]??'').trim();return /^\d+$/.test(v)?parseInt(v,10):null;}
+// Whole shares per ticket.
+// 1. Tickets with shares typed by hand spend exactly shares × ask.
+// 2. The rest of the money is re-spread over the automatic tickets in proportion to their allocation.
+// 3. Automatic tickets round down to whole shares; each remainder carries into the next ticket,
+//    whatever is left at the end buys extra shares where one still fits, the rest rolls over.
 function buildTickets(p){
   const pf=active(), ts=ticketState();
   const list=p.selected.filter(r=>r.buy>0).map(b=>{
     const a=askFor(pf,b.isin);
-    return {b,t:a?{valid:true,ask:a.ask,src:a.src,priceDate:a.date,carryIn:0,extra:0,shares:0}:{valid:false}};
+    return {b,t:a?{valid:true,ask:a.ask,src:a.src,priceDate:a.date,carryIn:0,redist:0,extra:0,shares:0,manual:false}:{valid:false}};
   });
   const valid=list.filter(x=>x.t.valid);
+  valid.forEach(x=>{const m=manualShares(x.b.isin);if(m!=null){x.t.manual=true;x.t.shares=m;}});
+  const manualList=valid.filter(x=>x.t.manual), autoList=valid.filter(x=>!x.t.manual);
+  const manualSpend=manualList.reduce((s,x)=>s+x.t.shares*x.t.ask,0);
+  const pool=valid.reduce((s,x)=>s+x.b.buy,0)-manualSpend;          // money left for automatic tickets
+  const autoAlloc=autoList.reduce((s,x)=>s+x.b.buy,0);
   let carry=0;
-  valid.forEach(x=>{const t=x.t;t.carryIn=Math.round(carry*100)/100;const budget=x.b.buy+carry;
-    t.shares=Math.floor(budget/t.ask+1e-9);carry=Math.max(0,budget-t.shares*t.ask);});
-  valid.forEach(x=>{const t=x.t;if(carry+1e-9>=t.ask){const n=Math.floor(carry/t.ask+1e-9);t.shares+=n;t.extra=n;carry=Math.max(0,carry-n*t.ask);}});
+  if(pool<=0||!autoList.length){ carry=pool; autoList.forEach(x=>{x.t.redist=-x.b.buy;}); }
+  else{
+    autoList.forEach(x=>{const t=x.t, base=autoAlloc>0?pool*x.b.buy/autoAlloc:pool/autoList.length;
+      t.redist=base-x.b.buy; t.carryIn=Math.round(carry*100)/100;
+      const budget=base+carry; t.shares=Math.floor(budget/t.ask+1e-9); carry=Math.max(0,budget-t.shares*t.ask);});
+    autoList.forEach(x=>{const t=x.t;if(carry+1e-9>=t.ask){const n=Math.floor(carry/t.ask+1e-9);t.shares+=n;t.extra=n;carry=Math.max(0,carry-n*t.ask);}});
+  }
   valid.forEach(x=>{const t=x.t;
     t.orderValue=Math.round(t.shares*t.ask*100)/100;
     t.limitPrice=roundUpCent(Math.max(t.ask*1.0005,t.ask+0.02));
@@ -644,28 +659,20 @@ function buildTickets(p){
   // Weight of each sleeve once every order in this plan has filled.
   const spendOf=x=>x.t.valid?x.t.orderValue:x.b.buy;
   const newTotal=p.total+list.reduce((s,x)=>s+spendOf(x),0);
+  const autosLeft=x=>autoList.some(y=>y!==x);   // true: fewer shares here → the money moves to another ticket
   list.forEach(x=>{
     const add=spendOf(x);
     x.after=newTotal>0?(x.b.value+add)/newTotal*100:null;
     x.over=p.total>0&&x.after!=null&&x.after-x.b.pct>OVERWEIGHT_WARN_PTS;
     if(x.over&&x.t.valid){
-      const L=(x.b.pct+OVERWEIGHT_WARN_PTS)/100, rest=newTotal-add;
-      x.maxShares=Math.max(0,Math.floor(((L*rest-x.b.value)/(1-L))/x.t.ask+1e-9));
+      const L=(x.b.pct+OVERWEIGHT_WARN_PTS)/100;
+      const maxV=autosLeft(x)?L*newTotal-x.b.value:(L*(newTotal-add)-x.b.value)/(1-L);
+      x.maxShares=Math.max(0,Math.floor(maxV/x.t.ask+1e-9));
     }
   });
   const missing=list.some(x=>!x.t.valid), allZero=list.length&&list.every(x=>x.t.valid&&x.t.shares===0);
   const leftover=p.c<=0?0:(!list.length||missing||allZero)?null:Math.round(carry*100)/100;
-  return {list,leftover,allZero};
-}
-
-function copyText(text,button){
-  const done=()=>{const old=button.textContent;button.textContent='Copied';setTimeout(()=>button.textContent=old,1200);};
-  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(()=>fallbackCopy(text,done));
-  else fallbackCopy(text,done);
-}
-function fallbackCopy(text,done){
-  const el=document.createElement('textarea');el.value=text;el.style.position='fixed';el.style.opacity='0';document.body.appendChild(el);el.select();
-  try{document.execCommand('copy');done();}finally{el.remove();}
+  return {list,leftover,allZero,overspend:pool<0?Math.round(-pool*100)/100:0};
 }
 
 function shortDay(d){const t=Date.parse(d);return isNaN(t)?'':new Date(t).toLocaleDateString('en-GB',{day:'numeric',month:'short'});}
@@ -673,33 +680,37 @@ function shortDay(d){const t=Date.parse(d);return isNaN(t)?'':new Date(t).toLoca
 function ticketOut(x){
   const {b,t}=x, o={}, warn=[];
   if(t.valid){
+    const rd=t.manual?0:t.redist;
     o.head=`<div class="eur">${eur2(t.orderValue)}</div><div class="sh">of ${eur2(b.buy)} allocated</div>`+
+      (t.manual?`<div class="sh">manual shares</div>`:'')+
+      (Math.abs(rd)>0.004?`<div class="sh">${rd>0?'+':'−'} ${eur2(Math.abs(rd))} ${rd>0?'freed by manual shares':'to cover manual shares'}</div>`:'')+
       (t.carryIn>0.004?`<div class="sh">+ ${eur2(t.carryIn)} carried in</div>`:'')+
       (t.extra?`<div class="sh">+${t.extra} share${t.extra===1?'':'s'} from roll-over</div>`:'');
     o.askHint=t.src==='live'?'your live ask':`using last price${t.priceDate?' · '+shortDay(t.priceDate):''}`;
-    o.shares=String(t.shares); o.limit=eur2(t.limitPrice); o.order=eur2(t.orderValue);
+    o.shares=String(t.shares); o.sharesHint=t.manual?'manual · <button type="button" data-sharesreset="'+esc(b.isin)+'">auto</button>':'auto · type to change';
+    o.limit=eur2(t.limitPrice); o.order=eur2(t.orderValue);
     o.commHint=(t.commissionPct*100).toFixed(2)+'% · '+(t.commManual?'manual':'auto');
     o.total=eur2(t.totalCost);
     if(t.shares===0) warn.push('<div class="ticketWarn">No whole share fits this allocation. Skip it this month or merge it with next month’s contribution.</div>');
     if(t.shares>0&&t.commissionPct>COMMISSION.warningPct) warn.push(`<div class="ticketWarn">Commission exceeds ${(COMMISSION.warningPct*100).toFixed(2)}%: this order is too small to be cost-efficient. Use Skip to redistribute it to another underweight sleeve, or defer this allocation and merge it with next month’s contribution.</div>`);
   }else{
     o.head=`<div class="eur">${eur2(b.buy)}</div><div class="sh">allocated</div>`;
-    o.askHint='no price yet · type the ask'; o.shares=o.limit=o.order=o.total='—'; o.commHint='auto';
+    o.askHint='no price yet · type the ask'; o.shares=''; o.sharesHint='needs a price'; o.limit=o.order=o.total='—'; o.commHint='auto';
     warn.push('<div class="ticketError">No price available for this instrument — type the live ask to size the order.</div>');
   }
   o.after=x.after==null?'—':`<span class="${x.over?'over':''}">${x.after.toFixed(1)}%</span>`;
   if(x.over){
     const lim=b.pct+OVERWEIGHT_WARN_PTS;
     warn.push(`<div class="ticketWarn">After this buy ${esc(b.sleeve)} would be <b>${x.after.toFixed(1)}%</b> of the portfolio vs a ${b.pct}% target (+${(x.after-b.pct).toFixed(1)} pts, limit +${OVERWEIGHT_WARN_PTS}).`+
-      (x.maxShares!=null?` At most <b>${x.maxShares}</b> share${x.maxShares===1?'':'s'} keeps it under ${lim}%.`:'')+
-      ` Open more positions or skip this sleeve to spread the money.</div>`);
+      (x.maxShares!=null?` At most <b>${x.maxShares}</b> share${x.maxShares===1?'':'s'} keeps it under ${lim}% — <button type="button" data-setshares="${esc(b.isin)}" data-n="${x.maxShares}">use ${x.maxShares}</button>.`:'')+
+      ` Or type fewer shares, open more positions, or skip this sleeve.</div>`);
   }
   o.warn=warn.join('');
   o.commPh=t.valid?t.autoCommission.toFixed(2):'0.00';
   o.copyDisabled=!t.valid||t.shares<1;
   return o;
 }
-const TICKET_KEYS=['head','askHint','shares','limit','order','commHint','total','after','warn'];
+const TICKET_KEYS=['head','askHint','sharesHint','limit','order','commHint','total','after','warn'];
 function ticketHTML(x){
   const {b}=x,o=ticketOut(x),ts=ticketState(),h=active().holdings[b.isin]||{};
   const d=k=>`data-o="${k}"`;
@@ -713,7 +724,7 @@ function ticketHTML(x){
       </div>
       <div class="ticketGrid">
         <label class="metric"><span class="label">Ask price (EUR)</span><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-ask="${esc(b.isin)}" value="${esc(ts.asks[b.isin]??'')}" placeholder="${h.price>0?esc(String(+h.price)):'0.00'}"><span class="hint" ${d('askHint')}>${o.askHint}</span></label>
-        <div class="metric primary"><span class="label">Shares</span><span class="val" ${d('shares')}>${o.shares}</span></div>
+        <label class="metric primary"><span class="label">Shares</span><input type="text" inputmode="numeric" autocomplete="off" spellcheck="false" data-shares="${esc(b.isin)}" value="${esc(o.shares)}" ${x.t.valid?'':'disabled'}><span class="hint" ${d('sharesHint')}>${o.sharesHint}</span></label>
         <div class="metric"><span class="label">Limit price</span><span class="val" ${d('limit')}>${o.limit}</span></div>
         <div class="metric"><span class="label">Order value</span><span class="val" ${d('order')}>${o.order}</span></div>
         <label class="metric"><span class="label">Commission (EUR)</span><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-comm="${esc(b.isin)}" value="${esc(ts.comms[b.isin]??'')}" placeholder="${o.commPh}"><span class="hint" ${d('commHint')}>${o.commHint}</span></label>
@@ -732,7 +743,7 @@ function renderPlanSummary(p,tk){
   const leftEl=document.getElementById('leftover');
   leftEl.textContent=tk.leftover==null?'—':eur2(tk.leftover);
   leftEl.title=missing.length?'Every selected ticket needs a price to calculate the roll-over.':(tk.allZero?'No whole-share order fits the selected allocations.':'Cash left after whole-share rounding across all tickets.');
-  const error=missing.length?`No price for ${missing.map(x=>x.b.sleeve).join(', ')} — type the ask price to size ${missing.length===1?'that order':'those orders'}.`:
+  const error=tk.overspend>0?`Manual shares cost ${eur2(tk.overspend)} more than this month’s amount — lower a share count or raise the amount.`:missing.length?`No price for ${missing.map(x=>x.b.sleeve).join(', ')} — type the ask price to size ${missing.length===1?'that order':'those orders'}.`:
     (tk.allZero?'No whole share fits any selected allocation. Skip a sleeve, merge the contribution with next month, or choose different positions.':'');
   const pe=document.querySelector('#buybox [data-o="planError"]');
   if(pe)pe.innerHTML=error?`<div class="planError">${esc(error)}</div>`:'';
@@ -757,6 +768,7 @@ function updatePlanOutputs(){
     const o=ticketOut(x);
     TICKET_KEYS.forEach(k=>{const n=el.querySelector(`[data-o="${k}"]`);if(n&&n.innerHTML!==o[k])n.innerHTML=o[k];});
     const c=el.querySelector('[data-comm]');if(c)c.placeholder=o.commPh;
+    const s=el.querySelector('[data-shares]');if(s&&s!==document.activeElement&&s.value!==o.shares)s.value=o.shares;
     const btn=el.querySelector('[data-copy]');if(btn)btn.disabled=o.copyDisabled;
   });
   renderPlanSummary(p,tk);
@@ -765,8 +777,8 @@ function renderPlan(){
   const p=computePlan(), tk=buildTickets(p), host=document.getElementById('buybox');
   // A background re-render (e.g. prices arriving) must not steal the caret from a ticket input.
   const ae=document.activeElement;let keep=null;
-  if(ae&&host.contains(ae)&&(ae.dataset.ask||ae.dataset.comm)){
-    const key=ae.dataset.ask?'ask':'comm';
+  if(ae&&host.contains(ae)&&(ae.dataset.ask||ae.dataset.comm||ae.dataset.shares)){
+    const key=ae.dataset.ask?'ask':ae.dataset.comm?'comm':'shares';
     keep={sel:`[data-${key}="${CSS.escape(ae.dataset[key])}"]`,s:ae.selectionStart,e:ae.selectionEnd};
   }
   const skipped=Object.keys(ticketState().skipped).filter(i=>ticketState().skipped[i]).map(i=>active().targets.find(t=>t.isin===i)).filter(Boolean);
@@ -776,6 +788,15 @@ function renderPlan(){
     : `<div class="buyrow"><div class="left"><div class="nm">${p.c>0?'No eligible sleeves remain. Undo a skipped sleeve to rebuild the plan.':'Enter holdings and an amount to see the plan.'}</div></div></div>`+skippedHTML;
   host.querySelectorAll('[data-ask]').forEach(el=>el.addEventListener('input',e=>{ticketState().asks[e.target.dataset.ask]=e.target.value;updatePlanOutputs();}));
   host.querySelectorAll('[data-comm]').forEach(el=>el.addEventListener('input',e=>{ticketState().comms[e.target.dataset.comm]=e.target.value;updatePlanOutputs();}));
+  host.querySelectorAll('[data-shares]').forEach(el=>{
+    el.addEventListener('focus',e=>e.target.select());
+    el.addEventListener('input',e=>{const v=e.target.value.replace(/\D/g,'');if(v!==e.target.value)e.target.value=v;
+      if(v==='')delete ticketState().shares[e.target.dataset.shares];else ticketState().shares[e.target.dataset.shares]=v;updatePlanOutputs();});
+    el.addEventListener('blur',()=>updatePlanOutputs());});
+  if(!host.dataset.bound){host.dataset.bound='1';host.addEventListener('click',e=>{
+    const set=e.target.closest('[data-setshares]'),rst=e.target.closest('[data-sharesreset]');
+    if(set){ticketState().shares[set.dataset.setshares]=set.dataset.n;renderPlan();}
+    else if(rst){e.preventDefault();delete ticketState().shares[rst.dataset.sharesreset];renderPlan();}});}
   host.querySelectorAll('[data-skip]').forEach(el=>el.addEventListener('change',e=>{ticketState().skipped[e.target.dataset.skip]=true;renderPlan();}));
   host.querySelectorAll('[data-unskip]').forEach(el=>el.addEventListener('click',e=>{delete ticketState().skipped[e.target.dataset.unskip];renderPlan();}));
   host.querySelectorAll('[data-copy]').forEach(el=>el.addEventListener('click',e=>{
