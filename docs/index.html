@@ -189,6 +189,16 @@
   .welcome button.primary{padding:14px 40px;font-size:15px}
   .welcome-version{color:var(--dim);font-size:12px;margin-top:16px;letter-spacing:.3px}
   .welcome.hide{display:none}
+  .welcome-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px}
+  .peek{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;
+    margin:0 0 26px;max-width:330px;width:100%;text-align:left}
+  .peek .cap{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.55px;text-align:center}
+  .peek .big{font-size:31px;font-weight:800;letter-spacing:-.6px;text-align:center;margin-top:2px}
+  .peek .prow{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+    padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+  .peek .prow:last-child{border-bottom:0}
+  .peek .prow.sum{border-top:1px solid var(--line);margin-top:2px;padding-top:9px}
+  .peek .muted{color:var(--dim);font-size:12.5px;text-align:center;padding:6px 0}
   @media(max-width:720px){
     .ticketGrid{grid-template-columns:repeat(4,minmax(0,1fr))}
   }
@@ -239,7 +249,12 @@
   <img src="icon-192.png" class="welcome-logo" alt="">
   <h1>Portfolio Rebalancer</h1>
   <p>Track your ETF portfolio, see what to buy each month to stay on target, and project where it's headed.</p>
+  <div class="peek hide" id="peekBox"></div>
   <button class="primary" id="welcomeBtn">Get started</button>
+  <div class="welcome-actions">
+    <button class="ghost" id="peekTotal">Show my return</button>
+    <button class="ghost" id="peekDetail">Show per asset</button>
+  </div>
   <div class="welcome-version" id="welcomeVersion"></div>
 </div>
 
@@ -308,7 +323,9 @@
       </table></div>
     </div>
     <div id="unmapped"></div>
-    <div class="help">Choose how many of the most-underweight positions to open. Allocations rebalance with new money only; whole shares use the ask you type in each ticket (the last fetched price if left blank), and each ticket's rounding remainder carries to the next one. Type a share count to override a ticket; the rest of the money is re-spread over the other tickets.</div>
+    <div class="help">Set a sleeve to <b>0%</b> in ⚙︎ to retire it: you keep the shares and they still count towards your value,
+      your charts and your projection, but the plan stops buying it and its drift stops being a reason to act. Nothing is sold.
+      Choose how many of the most-underweight positions to open. Allocations rebalance with new money only; whole shares use the ask you type in each ticket (the last fetched price if left blank), and each ticket's rounding remainder carries to the next one. Type a share count to override a ticket; the rest of the money is re-spread over the other tickets.</div>
   </section>
 
   <!-- ============ PERFORMANCE ============ -->
@@ -359,9 +376,10 @@
       <div class="chartCap" id="ddCap"></div>
       <div id="ddActions"></div>
     </div>
-    <div class="help">Drawdown is how far you are below your highest recorded value. Tap the chart to see any date.
-      History grows every day you open the app, and importing an older Activity Statement adds that date too —
-      so uploading a few past statements backfills the curve. Finish with the newest one.</div>
+    <div class="help">Drawdown is how far your <b>investments</b> are below their best day. The money you add each month is
+      subtracted before the comparison, so a deposit never shows up as a gain and never hides a fall.
+      Tap the chart to see any date. History grows every day you open the app, and importing an older Activity
+      Statement adds that date too — so uploading a few past statements backfills the curve. Finish with the newest one.</div>
   </section>
 
   <!-- ============ PREDICT ============ -->
@@ -437,7 +455,7 @@
     <div class="card">
       <div class="row">
         <div class="stat" style="border:0;padding:0"><div class="label">Tracking since</div><div class="value sm" id="histSince">—</div></div>
-        <div class="stat" style="border:0;padding:0"><div class="label">Change over that period</div><div class="value sm" id="histChange">—</div></div>
+        <div class="stat" style="border:0;padding:0"><div class="label">Return over that period</div><div class="value sm" id="histChange">—</div></div>
       </div>
       <div class="chartWrap" id="histChart" style="margin-top:12px"></div>
       <div class="chartCap" id="histCap"></div>
@@ -446,7 +464,9 @@
         <span><span class="dot" style="background:var(--dim)"></span>Money put in</span>
       </div>
     </div>
-    <div class="help">Every dot is a day the app recorded your portfolio. Tap anywhere on the line to read that day's value, what you had invested by then, and the return.</div>
+    <div class="help">Every dot is a day the app recorded your portfolio. Tap anywhere on the line to read that day's value,
+      what you had invested by then, and the return. <b>Return over that period</b> measures only how your investments moved —
+      deposits are removed, so adding 4.000 € never reads as a 4.000 € profit.</div>
   </section>
 
 </div>
@@ -477,7 +497,14 @@
       <label><span class="fieldlab" style="font-size:9.5px">Minimum €</span><input id="commMin" type="text" inputmode="decimal" autocomplete="off"></label>
       <label><span class="fieldlab" style="font-size:9.5px">Maximum €</span><input id="commMax" type="text" inputmode="decimal" autocomplete="off"></label>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+    <div class="fieldlab" style="margin-top:16px">Backup — move everything to another device</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="ghost" id="exportBackup">⬇ Export backup file</button>
+      <button class="ghost" id="importBackupBtn">⬆ Restore from file</button>
+      <input type="file" id="backupFile" class="hide" accept=".json,application/json">
+    </div>
+    <div class="help" style="margin:7px 3px 0">The file holds every portfolio, trade, deposit, price and recorded day — your whole history, not just today. Restoring replaces what is on this device.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
       <button class="ghost" id="dupPf">⧉ Duplicate</button>
       <button class="ghost danger" id="delPf">🗑 Delete</button>
       <span style="flex:1"></span>
@@ -487,8 +514,16 @@
   </div>
 </div>
 
+<!-- Import review window -->
+<div class="modal" id="importModal">
+  <div class="sheet">
+    <h3 id="importTitle">Review before importing</h3>
+    <div id="importSheetBody"></div>
+  </div>
+</div>
+
 <script>
-const APP_VERSION = '2.6.1';
+const APP_VERSION = '2.7.0';
 const DEFAULT_TARGETS = [
   {sleeve:"Core World",       name:"UBS Core MSCI World",           isin:"IE00BD4TXV59", pct:35, ticker:"UETW", exchange:"IBIS"},
   {sleeve:"Momentum",         name:"Xtrackers MSCI World Momentum", isin:"IE00BL25JP72", pct:10, ticker:"XDEM", exchange:"IBIS2"},
@@ -563,6 +598,7 @@ function assume(t){
   if(has('emerg','em imi','msci em',' em ')) return {mu:7.5,sd:18};
   if(has('moment')) return {mu:7.5,sd:16};
   if(has('qualit')) return {mu:7.3,sd:14.5};
+  if(has('value')) return {mu:7.2,sd:15};
   if(has('world','developed','s&p','sp500','stoxx','all country','acwi','nasdaq','ftse')) return {mu:7.0,sd:15};
   return {mu:7.0,sd:20}; // single stock / unknown
 }
@@ -574,7 +610,11 @@ function computePlan(){
   const pf=active(); const ts=ticketState(); const total=totalValue(pf); const c=Math.max(0,pf.contribution||0);
   const newTotal=total+c;
   const rows=pf.targets.map(t=>({...t, value:pf.holdings[t.isin]?.value||0, current: total? (pf.holdings[t.isin]?.value||0)/total*100 : 0}));
-  rows.forEach(r=>{r.drift=r.current-r.pct;r.deficit=Math.max(0,newTotal*(r.pct/100)-r.value);r.outBand=Math.abs(r.drift)>BAND;r.buy=0;});
+  // A sleeve set to 0% is "legacy": still owned, still valued, still in the charts and the
+  // projection — but never bought again, and its drift is not a reason to act.
+  rows.forEach(r=>{r.legacy=!(r.pct>0)&&r.value>0;
+    r.drift=r.current-r.pct;r.deficit=Math.max(0,newTotal*(r.pct/100)-r.value);
+    r.outBand=!r.legacy&&Math.abs(r.drift)>BAND;r.buy=0;});
   rows.sort((a,b)=>a.drift-b.drift);
   const allowed=rows.filter(r=>!ts.skipped[r.isin]&&r.pct>0);
   const selected=allowed.slice(0,Math.max(1,Math.min(pf.maxPositions||DEFAULT_POSITION_COUNT,allowed.length)));
@@ -751,10 +791,10 @@ function renderPlanSummary(p,tk){
   document.getElementById('tbody').innerHTML = p.rows.map(r=>{
     const cls=r.drift>=0?'pos':'neg', fill=Math.min(100,r.current/40*100), tick=Math.min(100,r.pct/40*100);
     const h=active().holdings[r.isin]||{}, x=byIsin[r.isin];
-    return `<tr><td class="full"><div class="sleeveName">${esc(r.sleeve)}${h.qty?` <span style="color:var(--dim);font-weight:400">· ${(+h.qty).toLocaleString('it-IT')} sh</span>`:''}</div>
+    return `<tr><td class="full"><div class="sleeveName">${esc(r.sleeve)}${r.legacy?' <span class="badge">legacy</span>':''}${h.qty?` <span style="color:var(--dim);font-weight:400">· ${(+h.qty).toLocaleString('it-IT')} sh</span>`:''}</div>
       <div class="bar"><div class="fill" style="width:${fill}%"></div><div class="tick" style="left:${tick}%"></div></div></td>
       <td data-label="Target">${r.pct.toFixed(0)}%</td><td data-label="Now">${r.current.toFixed(1)}%${r.outBand?'<span class="badge">±'+BAND+'</span>':''}</td>
-      <td data-label="Drift" class="${cls}">${pctS(r.drift)}</td><td data-label="Value">${eur(r.value)}</td>
+      <td data-label="Drift" class="${r.legacy?'':cls}">${r.legacy?'held, not bought':pctS(r.drift)}</td><td data-label="Value">${eur(r.value)}</td>
       <td data-label="Buy €">${x?eur2(x.t.valid?x.t.orderValue:r.buy):'—'}</td><td data-label="Shares">${x?(x.t.valid?x.t.shares:'price needed'):'—'}</td></tr>`;
   }).join('');
 }
@@ -999,8 +1039,40 @@ function bindChart(hostId,capId,rows,lines,Y,describe){
   host.addEventListener('touchmove',ev=>{pick(ev);ev.preventDefault();},{passive:false});
   pick({clientX:1e6});                      // start on the most recent point
 }
+// ---------- return index: performance with new money taken out ----------
+// Between two recorded days the only honest return is (value_now − money added since) / value_before.
+// Without that subtraction a 4.000 € deposit reads as a 4.000 € gain, which is what made
+// "change over the period" look like +119% and a bad import look like a −44% crash.
+// How far a diversified portfolio can plausibly move between two recorded days. Three days
+// cannot swing 44%; two months can. Anything past this is an import or a correction.
+function flowLimit(days){ return Math.min(0.5, 0.10+0.05*Math.sqrt(Math.max(1,days))); }
+function daysApart(a,b){
+  const t1=Date.parse(a),t2=Date.parse(b);
+  return (isNaN(t1)||isNaN(t2))?1:Math.max(1,Math.round(Math.abs(t2-t1)/86400000));
+}
+function returnSeries(pf){
+  const snaps=snapSeries(pf);
+  if(!snaps.length)return {rows:[],artifacts:0};
+  // Older snapshots pre-date the "invested" field: carry the nearest known figure across them.
+  let carry=0;const base=[];
+  snaps.forEach(s=>{if(s.c>0)carry=s.c;base.push({d:s.d,v:s.v,c:s.c>0?s.c:carry});});
+  let idx=1,peak=1,peakDate=base[0].d,peakValue=base[0].v,artifacts=0;
+  const rows=[];
+  base.forEach((r,i)=>{
+    if(i>0){
+      const p=base[i-1],flow=r.c-p.c;
+      let g=p.v>0?(r.v-flow)/p.v-1:0;
+      if(!Number.isFinite(g)||Math.abs(g)>flowLimit(daysApart(p.d,r.d))){g=0;artifacts++;}   // a correction, not a loss
+      idx=idx*(1+g);
+    }
+    if(idx>peak){peak=idx;peakDate=r.d;peakValue=r.v;}
+    rows.push({d:r.d,v:r.v,c:r.c,idx,peak,peakDate,peakValue,
+      dd:peak>0?(peak-idx)/peak*100:0, twr:(idx-1)*100});
+  });
+  return {rows,artifacts};
+}
 function renderHistoryChart(){
-  const pf=active(),rows=snapSeries(pf);
+  const pf=active(),ser=returnSeries(pf),rows=ser.rows;
   const host=document.getElementById('histChart'),cap=document.getElementById('histCap');
   const since=document.getElementById('histSince'),change=document.getElementById('histChange');
   if(!host)return;
@@ -1012,41 +1084,31 @@ function renderHistoryChart(){
     return;
   }
   const first=rows[0],last=rows[rows.length-1];
-  const diff=last.v-first.v,pct=first.v>0?diff/first.v*100:0;
   since.textContent=fmtDay(first.d);
-  change.textContent=`${eur2(diff)} · ${pctS(pct)}`;
-  change.className='value sm '+(diff>=0?'pos':'neg');
-  // Older snapshots pre-date the "invested" field: carry the nearest known figure across
-  // them so one missing value can't drag the whole line to zero.
-  const known=rows.filter(r=>r.c>0);
-  if(known.length){
-    let carry=known[0].c;
-    rows.forEach(r=>{ if(r.c>0)carry=r.c; else r.c=carry; });
-  }
+  change.textContent=pctS(last.twr);
+  change.className='value sm '+(last.twr>=0?'pos':'neg');
+  const known=rows.some(r=>r.c>0);
   const lines=[{get:r=>r.v,color:'var(--accent)'}];
-  if(known.length)lines.push({get:r=>r.c||0,color:'var(--dim)',dash:true,width:2});
+  if(known)lines.push({get:r=>r.c||0,color:'var(--dim)',dash:true,width:2});
   const built=buildChart(rows,lines,true);
   host.innerHTML=built.svg;
   bindChart('histChart','histCap',rows,lines,built.Y,(r)=>{
     const inv=r.c||0,gain=inv>0?r.v-inv:null;
     return `<b>${esc(fmtDay(r.d))}</b> · value <b>${eur2(r.v)}</b>`+
-      (inv>0?`<br>put in ${eur2(inv)} · return <b class="${gain>=0?'pos':'neg'}">${eur2(gain)} · ${pctS(gain/inv*100)}</b>`:'');
+      (inv>0?`<br>put in ${eur2(inv)} · money return <b class="${gain>=0?'pos':'neg'}">${eur2(gain)}</b>`:'')+
+      `<br>market return since ${esc(fmtDay(first.d))} <b class="${r.twr>=0?'pos':'neg'}">${pctS(r.twr)}</b>`;
   });
 }
 function renderDrawdownChart(){
-  const pf=active(),snaps=snapSeries(pf);
+  const pf=active(),ser=returnSeries(pf),rows=ser.rows;
   const host=document.getElementById('ddChart'),cap=document.getElementById('ddCap');
   const actions=document.getElementById('ddActions');
-  let peak=0,peakDate='';
-  const rows=snaps.map(s=>{
-    if(s.v>peak){peak=s.v;peakDate=s.d;}
-    return {d:s.d,v:s.v,dd:peak>0?(peak-s.v)/peak*100:0,peak,peakDate};
-  });
   const worst=rows.reduce((a,r)=>r.dd>(a?a.dd:-1)?r:a,null);
   document.getElementById('ddNow').textContent=rows.length?'-'+rows[rows.length-1].dd.toFixed(1)+'%':'—';
   document.getElementById('ddMax').textContent=worst?'-'+worst.dd.toFixed(1)+'%':'—';
-  actions.innerHTML=snaps.length?`<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-    <button class="ghost danger" id="resetHistory">Reset history (${snaps.length} days)</button></div>`:'';
+  actions.innerHTML=(rows.length?`${ser.artifacts?`<div class="help" style="margin:8px 0 0">${ser.artifacts} recorded day${ser.artifacts===1?'':'s'} moved too far to be a market move — an import or a correction — so ${ser.artifacts===1?'it is':'they are'} treated as flat rather than as a loss.</div>`:''}
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+    <button class="ghost danger" id="resetHistory">Reset history (${rows.length} days)</button></div>`:'');
   const reset=document.getElementById('resetHistory');
   if(reset)reset.onclick=()=>{
     if(!confirm('Clear the recorded history and start again from today? Holdings, trades and deposits are not affected.'))return;
@@ -1062,8 +1124,8 @@ function renderDrawdownChart(){
   host.innerHTML=built.svg;
   bindChart('ddChart','ddCap',rows,lines,built.Y,(r)=>
     r.dd<0.005
-      ? `<b>${esc(fmtDay(r.d))}</b> · at a new high of <b>${eur2(r.v)}</b>`
-      : `<b>${esc(fmtDay(r.d))}</b> · <b class="neg">-${r.dd.toFixed(1)}%</b> below the peak<br>${eur2(r.v)} against ${eur2(r.peak)} reached on ${esc(fmtDay(r.peakDate))}`);
+      ? `<b>${esc(fmtDay(r.d))}</b> · at a new high · portfolio worth ${eur2(r.v)}`
+      : `<b>${esc(fmtDay(r.d))}</b> · <b class="neg">-${r.dd.toFixed(1)}%</b> below the high set on ${esc(fmtDay(r.peakDate))}<br>portfolio worth ${eur2(r.v)} · the money you added since then is not counted as a gain`);
 }
 
 // ---------- prediction (Monte Carlo) ----------
@@ -1077,7 +1139,16 @@ function runMC(){
   const lumps=(PRED.lumps||[]).filter(l=>l.amount>0&&l.years>=0&&l.years<=years);
   const lumpByMonth={};
   lumps.forEach(l=>{ const m=Math.round(l.years*12); lumpByMonth[m]=(lumpByMonth[m]||0)+l.amount; });
-  const w=pf.targets.map(t=>t.pct/100); const wsum=w.reduce((a,b)=>a+b,0)||1; w.forEach((x,i)=>w[i]=x/wsum);
+  // Weight what you actually hold today (retired 0% sleeves included) for the money already
+  // invested, and the target mix for every euro still to come.
+  const lumpSum=lumps.reduce((s,l)=>s+l.amount,0);
+  const tgt=pf.targets.map(t=>Math.max(0,t.pct)/100), tgtSum=tgt.reduce((a,b)=>a+b,0)||1;
+  const held=pf.targets.map(t=>Math.max(0,pf.holdings[t.isin]?.value||0)), heldSum=held.reduce((a,b)=>a+b,0);
+  const future=Math.max(0,monthly*months+lumpSum);
+  const w=pf.targets.map((t,i)=>initial*(heldSum>0?held[i]/heldSum:tgt[i]/tgtSum)+future*(tgt[i]/tgtSum));
+  let wsum=w.reduce((a,b)=>a+b,0);
+  if(!(wsum>0)){pf.targets.forEach((t,i)=>{w[i]=tgt[i];});wsum=tgtSum;}
+  w.forEach((x,i)=>w[i]=x/wsum);
   const A=pf.targets.map(t=>assumFor(t));
   const muM=A.map(a=>a.mu/100/12), sdM=A.map(a=>a.sd/100/Math.sqrt(12));
   const muP=A.reduce((a,x,i)=>a+w[i]*x.mu,0);
@@ -1097,7 +1168,6 @@ function runMC(){
   }
   finals.sort((a,b)=>a-b); mdds.sort((a,b)=>a-b);
   const band=yearly.map(col=>{col.sort((a,b)=>a-b);return{p10:percentile(col,10),p50:percentile(col,50),p90:percentile(col,90)};});
-  const lumpSum=lumps.reduce((s,l)=>s+l.amount,0);
   const investedYearly=Array.from({length:years+1},(_,y)=>
     initial+monthly*12*y+lumps.filter(l=>l.years<=y).reduce((s,l)=>s+l.amount,0));
   return {muP, invested:initial+monthly*months+lumpSum, initial, monthly, lumps, investedYearly,
@@ -1423,10 +1493,37 @@ function refreshAfterImport(){
   if(!document.getElementById('tab-perf').classList.contains('hide'))renderPerf();
   if(!document.getElementById('tab-charts').classList.contains('hide'))renderCharts();
 }
+// The review window: every import lands here first, so nothing is committed unseen.
+function openImportSheet(title){
+  document.getElementById('importTitle').textContent=title||'Review before importing';
+  document.getElementById('importModal').classList.add('on');
+  const body=document.getElementById('importSheetBody');body.innerHTML='';
+  return body;
+}
+function closeImportSheet(){
+  document.getElementById('importModal').classList.remove('on');
+  document.getElementById('importSheetBody').innerHTML='';
+  const f=document.getElementById('reportFile');if(f)f.value='';
+  pendingImport=null;
+}
+function instrumentLabel(pf,isin,symbol){
+  const t=(pf.targets||[]).find(x=>x.isin===isin);
+  return (t&&t.sleeve)||symbol||isin;
+}
+function sheetDone(label){
+  return `<div style="margin-top:12px"><button class="primary" id="closeImport">${esc(label||'Done')}</button></div>`;
+}
+function bindSheetDone(){const b=document.getElementById('closeImport');if(b)b.onclick=closeImportSheet;}
 function renderTradePreview(host,parsed,onDone){
-  const s=parsed.summary;
-  const lines=parsed.trades.map(t=>`${esc(t.date)} · <b>${esc(t.symbol)}</b> ${t.side} ${t.qty} @ ${eur2(t.price)} → ${eur2(tradeCostOf(t))}`);
-  host.innerHTML=`<div class="importSummary"><b>Review before importing</b>
+  const s=parsed.summary,pf=active();
+  const rows=parsed.trades.map(t=>`<tr>
+      <td class="full"><div class="sleeveName">${esc(instrumentLabel(pf,t.isin,t.symbol))}${t.side==='SELL'?' <span class="badge">sell</span>':''}</div>
+        <div class="isin">${esc(t.symbol)} · ${esc(t.date)}${t.time?' '+esc(t.time.slice(0,5)):''}</div></td>
+      <td data-label="Shares">${(+t.qty).toLocaleString('it-IT')}</td>
+      <td data-label="Price">${eur2(t.price)}</td>
+      <td data-label="Fees">${eur2(Math.abs(t.comm||0)+Math.abs(t.fee||0))}</td>
+      <td data-label="Total">${t.side==='SELL'?'−':''}${eur2(tradeCostOf(t))}</td></tr>`).join('');
+  host.innerHTML=`<div class="importSummary"><b>${s.newTrades} order${s.newTrades===1?'':'s'} ready to import</b>
     <div class="summaryGrid">
       <div>New trades<b>${s.newTrades}</b></div>
       <div>Already imported<b>${s.duplicates}</b></div>
@@ -1435,10 +1532,12 @@ function renderTradePreview(host,parsed,onDone){
       <div>Commissions<b>${eur2(s.fees)}</b></div>
       <div>Instruments<b>${s.symbols.length}</b></div>
     </div>
-    ${lines.length?`<div class="help" style="margin:6px 0 0">${lines.slice(0,10).join('<br>')}${lines.length>10?'<br>…':''}</div>`:''}
+    ${rows?`<div class="tablewrap"><table class="resp">
+      <thead><tr><th>Instrument</th><th>Shares</th><th>Price</th><th>Fees</th><th>Total</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`:''}
     ${parsed.unmapped.length?`<div class="ticketWarn">No ISIN found for ${esc(parsed.unmapped.join(', '))}. These rows are skipped — add the ticker to this portfolio (⚙︎) or include the “Financial Instrument Information” section, then import again.</div>`:''}
     ${s.newTrades?'':'<div class="ticketWarn">Nothing new to import — every trade in this document is already in your ledger.</div>'}
-    <div style="display:flex;gap:8px;margin-top:10px">
+    <div style="display:flex;gap:8px;margin-top:12px">
       <button class="primary" id="confirmTrades" ${s.newTrades?'':'disabled'}>Confirm import</button>
       <button class="ghost" id="cancelTrades">Cancel</button></div></div>`;
   const done=()=>{if(onDone)onDone();};
@@ -1447,9 +1546,11 @@ function renderTradePreview(host,parsed,onDone){
     if(parsed.map)Object.assign(active().symbolMap,parsed.map);
     applyTrades(active(),parsed.trades);refreshAfterImport();done();
     host.innerHTML=`<div class="importSummary"><b>Imported ${s.newTrades} trade(s)</b>
-      <div class="help" style="margin:5px 0 0">Holdings, cost basis, fees and the buy plan now include the document dated ${esc(s.date||'today')}.</div></div>`;
+      <div class="help" style="margin:5px 0 0">Holdings, cost basis, fees and the buy plan now include the document dated ${esc(s.date||'today')}.</div>
+      ${sheetDone()}</div>`;
+    pendingImport=null;bindSheetDone();
   };
-  document.getElementById('cancelTrades').onclick=()=>{host.innerHTML='';done();};
+  document.getElementById('cancelTrades').onclick=()=>{done();closeImportSheet();};
 }
 
 
@@ -1617,15 +1718,31 @@ function parseReportCSV(text){
   if(!rows.length)throw new Error('No CSV position rows with an ISIN were found. Check that the export includes ISIN, quantity, mark price, currency, and FX rate to EUR.');
   return finishReport(rows,dates);
 }
-function renderImportPreview(result,error){
-  const el=document.getElementById('importPreview');
-  if(error){pendingImport=null;el.innerHTML=`<div class="ticketError"><b>Import failed.</b> ${esc(error)} Existing holdings were not changed.</div>`;return;}
-  const s=result.summary,w=result.warnings;
-  el.innerHTML=`<div class="importSummary"><b>Review before importing</b><div class="summaryGrid">
+function renderImportPreview(result,error,host){
+  const el=host||document.getElementById('importSheetBody');
+  if(error){pendingImport=null;
+    el.innerHTML=`<div class="ticketError"><b>Import failed.</b> ${esc(error)} Existing holdings were not changed.</div>${sheetDone('Close')}`;
+    bindSheetDone();return;}
+  const s=result.summary,w=result.warnings,pf=active();
+  const rows=Object.keys(result.holdings).map(isin=>{
+    const h=result.holdings[isin],old=pf.holdings[isin]||{};
+    const dq=(+h.qty||0)-(+old.qty||0),known=old.qty!=null;
+    const mine=pf.targets.some(t=>t.isin===isin);
+    return `<tr><td class="full"><div class="sleeveName">${esc(instrumentLabel(pf,isin,h.symbol))}${mine?'':' <span class="badge">not in portfolio</span>'}</div>
+      <div class="isin">${h.symbol?esc(h.symbol)+' · ':''}${esc(isin)}</div></td>
+      <td data-label="Shares">${(+h.qty).toLocaleString('it-IT')}${known&&Math.abs(dq)>1e-6?` <span style="color:var(--dim)">(${dq>0?'+':'−'}${Math.abs(dq).toLocaleString('it-IT')})</span>`:''}</td>
+      <td data-label="Price">${eur2(h.price)}</td>
+      <td data-label="Cost">${h.cost?eur2(h.cost):'—'}</td>
+      <td data-label="Value">${eur2(h.value)}</td></tr>`;}).join('');
+  el.innerHTML=`<div class="importSummary"><b>Positions on ${esc(s.reportDate)}</b><div class="summaryGrid">
     <div>Rows parsed<b>${s.rowsParsed}</b></div><div>Rows matched<b>${s.matched}</b></div><div>Unmatched / Other<b>${s.unmatched}</b></div>
     <div>Rows ignored<b>${s.ignored}</b></div><div>Total EUR<b>${eur2(s.total)}</b></div><div>Report date<b>${esc(s.reportDate)}</b></div></div>
+    ${rows?`<div class="tablewrap"><table class="resp">
+      <thead><tr><th>Instrument</th><th>Shares</th><th>Price</th><th>Cost</th><th>Value</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`:''}
+    <div class="help" style="margin:6px 0 0">This replaces your holdings with the statement, and becomes the baseline: only trades dated after ${esc(s.reportDate)} are added on top.</div>
     ${w.length?`<div class="ticketWarn">${esc(w.slice(0,4).join(' · '))}${w.length>4?' · …':''}</div>`:''}
-    <div style="display:flex;gap:8px;margin-top:10px"><button class="primary" id="confirmImport">Confirm import</button><button class="ghost" id="cancelImport">Cancel</button></div></div>`;
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="primary" id="confirmImport">Confirm import</button><button class="ghost" id="cancelImport">Cancel</button></div></div>`;
   document.getElementById('confirmImport').onclick=()=>{
     const pf=active();pf.holdings=result.holdings;
     Object.values(pf.holdings).forEach(h=>{
@@ -1636,10 +1753,11 @@ function renderImportPreview(result,error){
     pf.holdingsAsOf=s.reportDate;
     pf.holdingsAsOf=s.reportDate;pf.holdingsSource='positions report';
     rebuildFromTrades(pf);recordSnapshot(pf,s.reportDate);saveState();pendingImport=null;
-    document.getElementById('reportFile').value='';renderManual();renderPlan();
-    el.innerHTML=`<div class="importSummary"><b>Imported ${s.rowsParsed-s.ignored} position row(s)</b><div class="help" style="margin:5px 0 0">Holdings now reflect the report dated ${esc(s.reportDate)}.</div></div>`;
+    document.getElementById('reportFile').value='';refreshAfterImport();
+    el.innerHTML=`<div class="importSummary"><b>Imported ${s.rowsParsed-s.ignored} position row(s)</b><div class="help" style="margin:5px 0 0">Holdings now reflect the report dated ${esc(s.reportDate)}.</div>${sheetDone()}</div>`;
+    bindSheetDone();
   };
-  document.getElementById('cancelImport').onclick=()=>{pendingImport=null;document.getElementById('reportFile').value='';el.innerHTML='';};
+  document.getElementById('cancelImport').onclick=closeImportSheet;
 }
 async function readReport(file){
   const pf=active();
@@ -1964,15 +2082,17 @@ document.getElementById('parseBtn').onclick=()=>{
   const trades=parseTradeText(text,pf.targets,pf.trades);
   if(trades){
     msg.innerHTML=`Recognised <b>${trades.summary.orders}</b> order(s) from a trade confirmation.`;
-    renderTradePreview(host,trades,null);
+    host.innerHTML='';
+    renderTradePreview(openImportSheet('Trades to import'),trades,null);
     return;
   }
   let positions=null;
   try{positions=parseActivityPositions(text);}catch(err){positions=null;}
   if(positions){
     msg.innerHTML=`Recognised an <b>Open Positions</b> table dated ${esc(positions.summary.reportDate)}.`;
-    pendingImport=positions;renderImportPreview(positions);
-    document.getElementById('paneUpload').scrollIntoView({behavior:'smooth',block:'nearest'});
+    host.innerHTML='';
+    const body=openImportSheet('Positions on '+positions.summary.reportDate);
+    pendingImport=positions;renderImportPreview(positions,null,body);
     return;
   }
   host.innerHTML='';
@@ -1984,13 +2104,15 @@ document.getElementById('parseBtn').onclick=()=>{
   msg.innerHTML=n?`Imported <b>${n}</b> position value(s). Check them under “Enter values”.`
     :'Nothing recognised — paste either the Trades table or a positions list containing ISINs.';};
 document.getElementById('reportFile').addEventListener('change',async e=>{const file=e.target.files&&e.target.files[0];if(!file)return;
-  const host=document.getElementById('importPreview');
+  const host=openImportSheet('Reading '+(file.name||'report'));
   host.innerHTML='<div class="help">Reading '+esc(file.name||'report')+'…</div>';
+  const title=t=>{document.getElementById('importTitle').textContent=t;};
   try{
     const res=await readReport(file);
-    if(res.kind==='trades'){pendingImport=null;renderTradePreview(host,res.data,()=>{document.getElementById('reportFile').value='';});}
-    else{pendingImport=res.data;renderImportPreview(pendingImport);}
-  }catch(err){renderImportPreview(null,err.message||String(err));}});
+    if(res.kind==='trades'){pendingImport=null;title('Trades to import');renderTradePreview(host,res.data,null);}
+    else{pendingImport=res.data;title('Positions on '+res.data.summary.reportDate);renderImportPreview(pendingImport,null,host);}
+  }catch(err){title('Import failed');renderImportPreview(null,err.message||String(err),host);}});
+document.getElementById('importModal').addEventListener('click',e=>{if(e.target.id==='importModal')closeImportSheet();});
 document.getElementById('contribution').addEventListener('input',e=>{const v=parseFloat(e.target.value);active().contribution=isNaN(v)?0:v;saveState();renderPlan();});
 document.getElementById('positionCount').addEventListener('change',e=>{active().maxPositions=Math.max(1,Math.min(active().targets.length,+e.target.value||1));saveState();renderPlan();});
 
@@ -2005,6 +2127,42 @@ document.getElementById('depAdd').onclick=()=>{
   saveState(); amtEl.value=''; renderPerf();
 };
 
+// ---------- backup: carry the whole history to another device ----------
+const BACKUP_KEYS=['pr_state','pr_pred','pr_prices','pr_ovIds','pr_pricesChecked',
+  'pr_pricesLive','pr_pricesVia','pr_theme','pr_targets','pr_holdings','pr_contribution'];
+function exportBackup(){
+  const data={app:'portfolio-rebalancer',version:APP_VERSION,exportedAt:new Date().toISOString(),store:{}};
+  BACKUP_KEYS.forEach(k=>{try{const v=localStorage.getItem(k);if(v!=null)data.store[k]=JSON.parse(v);}catch(e){}});
+  const st=data.store.pr_state;
+  if(!st||!Array.isArray(st.portfolios)||!st.portfolios.length){alert('There is nothing to export yet.');return;}
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='portfolio-rebalancer-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
+}
+async function importBackup(file){
+  let data=null;
+  try{data=JSON.parse(await file.text());}catch(e){alert('That file could not be read as a backup.');return;}
+  const box=(data&&data.store)?data.store:data;
+  const st=box&&box.pr_state;
+  if(!st||!Array.isArray(st.portfolios)||!st.portfolios.length){alert('That file does not contain a portfolio backup.');return;}
+  const nP=st.portfolios.length;
+  const nT=st.portfolios.reduce((a,p)=>a+((p.trades||[]).length),0);
+  const nS=st.portfolios.reduce((a,p)=>a+((p.snapshots||[]).length),0);
+  const nD=st.portfolios.reduce((a,p)=>a+((p.contributions||[]).length),0);
+  const when=String(data.exportedAt||'').slice(0,10)||'an unknown date';
+  if(!confirm('Restore from '+when+'?\n\n'+nP+' portfolio(s)\n'+nT+' imported trade(s)\n'
+    +nD+' logged deposit(s)\n'+nS+' recorded day(s)\n\nEverything currently on this device is replaced.'))return;
+  BACKUP_KEYS.forEach(k=>{if(Object.prototype.hasOwnProperty.call(box,k))store.set(k,box[k]);});
+  alert('Restored. The app will reload now.');
+  location.reload();
+}
+document.getElementById('exportBackup').onclick=exportBackup;
+document.getElementById('importBackupBtn').onclick=()=>document.getElementById('backupFile').click();
+document.getElementById('backupFile').addEventListener('change',e=>{
+  const f=e.target.files&&e.target.files[0];e.target.value='';if(f)importBackup(f);});
+
 // ---------- theme ----------
 function applyThemeBtn(){document.getElementById('themeBtn').textContent=(document.documentElement.getAttribute('data-theme')==='light')?'☀️':'🌙';}
 document.getElementById('themeBtn').onclick=()=>{const cur=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';
@@ -2017,8 +2175,10 @@ document.getElementById('pfSelect').addEventListener('change',e=>{
   if(e.target.value==='__new__'){const cur=active();const p={id:uid(),name:'New portfolio',contribution:0,
     maxPositions:Math.min(DEFAULT_POSITION_COUNT,cur.targets.length),commission:cur.commission,targets:JSON.parse(JSON.stringify(cur.targets)),holdings:{},snapshots:[]};state.portfolios.push(p);state.active=p.id;saveState();refreshAll();openEdit();}
   else{state.active=e.target.value;saveState();refreshAll();}});
-function renderPositionCount(){const pf=active(),el=document.getElementById('positionCount');pf.maxPositions=Math.max(1,Math.min(pf.targets.length||1,pf.maxPositions||DEFAULT_POSITION_COUNT));
-  el.innerHTML=Array.from({length:pf.targets.length},(_,i)=>`<option value="${i+1}" ${pf.maxPositions===i+1?'selected':''}>${i+1} ${i?'positions':'position'}</option>`).join('');}
+function renderPositionCount(){const pf=active(),el=document.getElementById('positionCount');
+  const buyable=pf.targets.filter(t=>t.pct>0).length||pf.targets.length||1;   // 0% sleeves are never bought
+  pf.maxPositions=Math.max(1,Math.min(buyable,pf.maxPositions||DEFAULT_POSITION_COUNT));
+  el.innerHTML=Array.from({length:buyable},(_,i)=>`<option value="${i+1}" ${pf.maxPositions===i+1?'selected':''}>${i+1} ${i?'positions':'position'}</option>`).join('');}
 function refreshAll(){renderPfSelect();renderPositionCount();renderManual();renderPlan();document.getElementById('contribution').value=active().contribution??0;}
 
 // ---------- edit modal ----------
@@ -2084,6 +2244,28 @@ function fmtDay(d){
 // ---------- welcome screen ----------
 document.getElementById('welcomeVersion').textContent = 'v'+APP_VERSION;
 document.getElementById('welcomeBtn').onclick=()=>{document.getElementById('welcomeScreen').classList.add('hide');};
+// A look at performance without opening the app, and without showing a single amount.
+function peekTotalPct(){
+  const pf=active(),v=totalValue(pf),inv=contribTotal(pf);
+  return inv>0?(v-inv)/inv*100:null;
+}
+function peekHost(){const b=document.getElementById('peekBox');b.classList.remove('hide');return b;}
+document.getElementById('peekTotal').onclick=()=>{
+  const p=peekTotalPct();
+  peekHost().innerHTML='<div class="cap">Total return</div>'+(p==null
+    ? '<div class="big">&mdash;</div><div class="muted">No cost basis yet &mdash; import a statement or log your deposits.</div>'
+    : '<div class="big '+(p>=0?'pos':'neg')+'">'+pctS(p)+'</div>');
+};
+document.getElementById('peekDetail').onclick=()=>{
+  const pf=active(),p=peekTotalPct();
+  const rows=pf.targets.map(t=>{const h=pf.holdings[t.isin]||{},c=h.cost||0,v=h.value||0;
+    return {n:t.sleeve,legacy:!(t.pct>0)&&v>0,p:c>0?(v-c)/c*100:null};}).filter(r=>r.p!=null);
+  peekHost().innerHTML='<div class="cap">Return per asset</div>'+
+    (rows.length?rows.map(r=>'<div class="prow"><span>'+esc(r.n)+(r.legacy?' <span class="badge">legacy</span>':'')+
+      '</span><b class="'+(r.p>=0?'pos':'neg')+'">'+pctS(r.p)+'</b></div>').join('')
+    :'<div class="muted">No per-asset cost basis yet &mdash; import an Activity Statement.</div>')+
+    (p==null?'':'<div class="prow sum"><b>Total</b><b class="'+(p>=0?'pos':'neg')+'">'+pctS(p)+'</b></div>');
+};
 
 document.getElementById('refreshPrices').onclick=()=>syncPrices(true);
 document.addEventListener('visibilitychange',()=>{
