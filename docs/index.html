@@ -523,7 +523,7 @@
 </div>
 
 <script>
-const APP_VERSION = '2.7.0';
+const APP_VERSION = '2.8.0';
 const DEFAULT_TARGETS = [
   {sleeve:"Core World",       name:"UBS Core MSCI World",           isin:"IE00BD4TXV59", pct:35, ticker:"UETW", exchange:"IBIS"},
   {sleeve:"Momentum",         name:"Xtrackers MSCI World Momentum", isin:"IE00BL25JP72", pct:10, ticker:"XDEM", exchange:"IBIS2"},
@@ -893,6 +893,23 @@ function investedSource(pf){
 function contribTotal(pf){
   const src=investedSource(pf);
   return src==='cost'?costBasisTotal(pf):src==='trades'?tradeInvested(pf):depositTotal(pf);
+}
+// What had actually been put in by a given day. Deposits and trades both carry dates, so a
+// recorded day in September is stamped with September's money, not with today's total.
+function investedAsOf(pf,date){
+  const src=investedSource(pf);
+  const upto=d=>!date||!d||d<=date;
+  if(src==='deposits')
+    return r2((pf.contributions||[]).filter(c=>upto(c.date)).reduce((a,c)=>a+(c.amount||0),0));
+  const dated=(pf.trades||[]).length;
+  if(src==='trades'||(src==='cost'&&dated))
+    return r2((pf.trades||[]).filter(t=>upto(t.date)).reduce((a,t)=>a+(t.side==='SELL'
+      ?-(Math.abs(t.proceeds)-Math.abs(t.comm||0)-Math.abs(t.fee||0)):tradeCostOf(t)),0));
+  return contribTotal(pf);
+}
+// After an import brings dated money in, every recorded day is re-stamped from the ledger.
+function restampSnapshots(pf){
+  (pf.snapshots||[]).forEach(sn=>{sn.c=investedAsOf(pf,sn.d);});
 }
 function renderDeposits(){
   const pf=active(); pf.contributions=pf.contributions||[];
@@ -1479,7 +1496,7 @@ function tradeInvested(pf){return r2((pf.trades||[]).reduce((s,t)=>s+(t.side==='
 function tradeFees(pf){return r2((pf.trades||[]).reduce((s,t)=>s+Math.abs(t.comm||0)+Math.abs(t.fee||0),0));}
 function applyTrades(pf,list){
   pf.trades=(pf.trades||[]).concat(list).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
-  rebuildFromTrades(pf);
+  rebuildFromTrades(pf);restampSnapshots(pf);
   const last=pf.trades[pf.trades.length-1];
   pf.holdingsAsOf=(last&&last.date)||new Date().toISOString().slice(0,10);
   pf.holdingsSource='trades';
@@ -1562,11 +1579,97 @@ const POSITION_ROW=new RegExp('^([A-Z][A-Z0-9.]{0,11})\\s+(-?[\\d,]+(?:\\.\\d+)?
   '([\\d,]+(?:\\.\\d+)?)\\s+(-?[\\d,]+(?:\\.\\d+)?)\\s+([\\d,]+(?:\\.\\d+)?)\\s+'+
   '(-?[\\d,]+(?:\\.\\d+)?)\\s+(-?[\\d,]+(?:\\.\\d+)?)(?:\\s+[A-Za-z;]{1,8})?$');
 function statementDate(text){
-  const m=text.match(/(?:Activity Statement|Statement)\s*[-\u2013]\s*([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/);
-  if(m&&MONTHS[m[1].toLowerCase()])return `${m[3]}-${MONTHS[m[1].toLowerCase()]}-${String(m[2]).padStart(2,'0')}`;
-  const iso=text.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
-  return iso?iso[1]:null;
+  // "January 1, 2026 - October 30, 2026" describes a period: the positions in it are the
+  // positions on the LAST day. Stamping them with the first day would back-date the holdings
+  // by the whole period and wreck the recorded history.
+  const m=text.match(/(?:Activity Statement|Statement)\s*[-\u2013]\s*([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})(?:\s*[-\u2013]\s*([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4}))?/);
+  if(m){
+    const useEnd=m[4]&&MONTHS[m[4].toLowerCase()];
+    const mon=(useEnd?m[4]:m[1]).toLowerCase(), day=useEnd?m[5]:m[2], yr=useEnd?m[6]:m[3];
+    if(MONTHS[mon])return `${yr}-${MONTHS[mon]}-${String(day).padStart(2,'0')}`;
+  }
+  const iso=(text.match(/\b(20\d{2}-\d{2}-\d{2})\b/g)||[]).sort();
+  return iso.length?iso[iso.length-1]:null;
 }
+
+// ---------- Activity Statement: the Trades table ----------
+// This table has no BUY/SELL column (the sign of the quantity carries that), and the PDF puts
+// the trade date on the line above the row and the time on the line below. So the date is
+// carried down to the next row that parses.
+// SYMBOL qty t.price c.price proceeds comm basis realized mtm [code]
+const ACT_TRADE_ROW=new RegExp('^([A-Z][A-Z0-9.]{0,11})\\s+(-?[\\d,]+(?:\\.\\d+)?)\\s+([\\d,]+(?:\\.\\d+)?)\\s+'+
+  '([\\d,]+(?:\\.\\d+)?)\\s+(-?[\\d,]+(?:\\.\\d+)?)\\s+(-?[\\d,]+(?:\\.\\d+)?)\\s+'+
+  '(-?[\\d,]+(?:\\.\\d+)?)\\s+(-?[\\d,]+(?:\\.\\d+)?)\\s+(-?[\\d,]+(?:\\.\\d+)?)(?:\\s+[A-Za-z;]{1,10})?$');
+const SECTION_END=/^(Deposits\s*&\s*Withdrawals|Financial Instrument Information|Fees|Interest|Dividends|Withholding Tax|Change in|Codes|Notes)\b/;
+function parseActivityTrades(text,map,targets){
+  const start=text.search(/Symbol\s+Date\/Time\s+Quantity/);
+  if(start<0)return {trades:[],unmapped:[]};
+  const lines=text.slice(start).split('\n');
+  const trades=[],unmapped=new Set();
+  let pendingDate='',ccy='EUR';
+  for(const raw of lines){
+    const L=raw.trim();
+    if(SECTION_END.test(L))break;
+    const d=L.match(/^(\d{4}-\d{2}-\d{2}),?$/);
+    if(d){pendingDate=d[1];continue;}
+    if(/^[A-Z]{3}$/.test(L)){ccy=L;continue;}
+    const m=L.match(ACT_TRADE_ROW);
+    if(!m)continue;
+    const symbol=m[1].toUpperCase();
+    if(NOT_A_SYMBOL.test(symbol))continue;
+    if(ccy!=='EUR')continue;                       // a non-euro fill needs an FX rate this table lacks
+    const qty=tradeNum(m[2]),price=tradeNum(m[3]),proceeds=tradeNum(m[5]),comm=tradeNum(m[6]);
+    if(qty==null||price==null||proceeds==null||!(price>0)||!(Math.abs(qty)>0))continue;
+    if(!pendingDate)continue;
+    const isin=(map&&map[symbol])||((targets||[]).find(t=>(t.ticker||'').toUpperCase()===symbol)||{}).isin||null;
+    if(!isin)unmapped.add(symbol);
+    const t={symbol,date:pendingDate,time:'',exchange:'-',side:qty<0?'SELL':'BUY',
+      qty:Math.abs(qty),price,proceeds,comm:Math.abs(comm||0),fee:0,isin};
+    t.id=tradeKey(t);
+    trades.push(t);
+    pendingDate='';
+  }
+  return {trades,unmapped:[...unmapped]};
+}
+
+// ---------- Activity Statement: the dated Deposits & Withdrawals table ----------
+// Every transfer, with its date. A non-euro block is converted with the statement's own
+// "Total in EUR" line, never at face value.
+function parseStatementDeposits(text){
+  const start=text.search(/Deposits\s*&\s*Withdrawals\s*\n\s*Date/);
+  if(start<0)return null;
+  const lines=text.slice(start).split('\n');
+  const rows=[],warnings=[];
+  let block=[],ccy='EUR',blockTotal=null;
+  const flush=eurTotal=>{
+    if(block.length){
+      let rate=1;
+      if(ccy!=='EUR'){
+        if(eurTotal!=null&&blockTotal)rate=eurTotal/blockTotal;
+        else{warnings.push(ccy+' transfers skipped: the statement gives no euro equivalent');
+          block=[];blockTotal=null;return;}
+      }
+      block.forEach(r=>rows.push({date:r.date,amount:r2(r.amount*rate),
+        currency:ccy,original:ccy==='EUR'?null:r.amount}));
+    }
+    block=[];blockTotal=null;
+  };
+  for(const raw of lines){
+    const L=raw.trim();
+    if(/^Total Deposits/i.test(L)){flush(null);break;}
+    let m=L.match(/^Total in [A-Z]{3}\s+(-?[\d,]+(?:\.\d+)?)$/);
+    if(m){flush(tradeNum(m[1]));continue;}
+    m=L.match(/^Total\s+(-?[\d,]+(?:\.\d+)?)$/);
+    if(m){blockTotal=tradeNum(m[1]);continue;}
+    if(/^[A-Z]{3}$/.test(L)){flush(null);ccy=L;continue;}
+    m=L.match(/^(\d{4}-\d{2}-\d{2})\s+(.+?)\s+(-?[\d,]+(?:\.\d+)?)$/);
+    if(m){const a=tradeNum(m[3]);if(a!=null&&a!==0)block.push({date:m[1],amount:a});continue;}
+    if(SECTION_END.test(L)&&!/^Deposits/.test(L)){flush(null);break;}
+  }
+  flush(null);
+  return rows.length?{rows,warnings}:null;
+}
+function depositKey(d){return d.date+'|'+(+d.amount).toFixed(2);}
 function symbolIsinTable(text){
   const map={},start=text.search(/Financial Instrument Information/);
   if(start<0)return map;
@@ -1605,8 +1708,19 @@ function parseActivityPositions(text){
     holdings[r.isin]={value:r2(r.value),price:r.price,qty:r.qty,cost:r2(r.cost),
       currency:'EUR',fx:1,symbol:r.symbol};
   });
-  return {holdings,warnings,symbolMap:map,summary:{rowsParsed:rows.length+ignored,matched,unmatched,
-    ignored,total,reportDate:date}};
+  const ledger=parseActivityTrades(text,map,pf.targets);
+  const dep=parseStatementDeposits(text);
+  const seenT=new Set((pf.trades||[]).map(t=>t.id||tradeKey(t)));
+  const newTrades=ledger.trades.filter(t=>t.isin&&!seenT.has(t.id));
+  const seenD=new Set((pf.contributions||[]).map(depositKey));
+  const allDep=(dep&&dep.rows)||[];
+  const newDeposits=allDep.filter(d=>!seenD.has(depositKey(d)));
+  if(dep&&dep.warnings.length)warnings.push(...dep.warnings);
+  return {holdings,warnings,symbolMap:map,trades:newTrades,deposits:newDeposits,
+    summary:{rowsParsed:rows.length+ignored,matched,unmatched,ignored,total,reportDate:date,
+      tradesFound:ledger.trades.length,tradesNew:newTrades.length,
+      depositsFound:allDep.length,depositsNew:newDeposits.length,
+      depositsTotal:r2(newDeposits.reduce((a,d)=>a+d.amount,0))}};
 }
 
 // ---------- report upload (client-side, preview before commit) ----------
@@ -1734,12 +1848,28 @@ function renderImportPreview(result,error,host){
       <td data-label="Price">${eur2(h.price)}</td>
       <td data-label="Cost">${h.cost?eur2(h.cost):'—'}</td>
       <td data-label="Value">${eur2(h.value)}</td></tr>`;}).join('');
+  const deps=result.deposits||[],trs=result.trades||[];
+  const depHTML=!(s.depositsFound)?'':`<div class="importSummary" style="margin-top:12px">
+    <b>Money you put in &mdash; ${deps.length} new of ${s.depositsFound} in this statement</b>
+    <div class="help" style="margin:4px 0 8px">Every transfer with its own date, so your return and drawdown know when the money arrived. Transfers already logged are skipped.</div>
+    ${deps.length?`<div class="tablewrap"><table class="resp"><thead><tr><th>Date</th><th>Amount</th></tr></thead><tbody>`+
+      deps.map(d=>`<tr><td class="full">${esc(d.date)}</td><td data-label="Amount">${eur2(d.amount)}${d.original?` <span style="color:var(--dim)">(${(+d.original).toLocaleString('it-IT')} ${esc(d.currency)})</span>`:''}</td></tr>`).join('')+
+      `</tbody></table></div><div class="help" style="margin:6px 0 0">Total to add: <b>${eur2(s.depositsTotal)}</b></div>`
+    :'<div class="help" style="margin:0">All of them are already logged.</div>'}</div>`;
+  const tradeHTML=!(s.tradesFound)?'':`<div class="importSummary" style="margin-top:12px">
+    <b>Trades &mdash; ${trs.length} new of ${s.tradesFound} in this statement</b>
+    ${trs.length?`<div class="tablewrap"><table class="resp"><thead><tr><th>Instrument</th><th>Date</th><th>Shares</th><th>Price</th><th>Total</th></tr></thead><tbody>`+
+      trs.map(t=>`<tr><td class="full"><div class="sleeveName">${esc(instrumentLabel(pf,t.isin,t.symbol))}${t.side==='SELL'?' <span class="badge">sell</span>':''}</div></td>
+        <td data-label="Date">${esc(t.date)}</td><td data-label="Shares">${(+t.qty).toLocaleString('it-IT')}</td>
+        <td data-label="Price">${eur2(t.price)}</td><td data-label="Total">${eur2(tradeCostOf(t))}</td></tr>`).join('')+
+      `</tbody></table></div>`:'<div class="help" style="margin:0">All of them are already in your ledger.</div>'}</div>`;
   el.innerHTML=`<div class="importSummary"><b>Positions on ${esc(s.reportDate)}</b><div class="summaryGrid">
     <div>Rows parsed<b>${s.rowsParsed}</b></div><div>Rows matched<b>${s.matched}</b></div><div>Unmatched / Other<b>${s.unmatched}</b></div>
     <div>Rows ignored<b>${s.ignored}</b></div><div>Total EUR<b>${eur2(s.total)}</b></div><div>Report date<b>${esc(s.reportDate)}</b></div></div>
     ${rows?`<div class="tablewrap"><table class="resp">
       <thead><tr><th>Instrument</th><th>Shares</th><th>Price</th><th>Cost</th><th>Value</th></tr></thead>
       <tbody>${rows}</tbody></table></div>`:''}
+    ${depHTML}${tradeHTML}
     <div class="help" style="margin:6px 0 0">This replaces your holdings with the statement, and becomes the baseline: only trades dated after ${esc(s.reportDate)} are added on top.</div>
     ${w.length?`<div class="ticketWarn">${esc(w.slice(0,4).join(' · '))}${w.length>4?' · …':''}</div>`:''}
     <div style="display:flex;gap:8px;margin-top:12px"><button class="primary" id="confirmImport">Confirm import</button><button class="ghost" id="cancelImport">Cancel</button></div></div>`;
@@ -1750,9 +1880,18 @@ function renderImportPreview(result,error,host){
       h.baseQty=h.qty;h.baseCost=h.cost;h.baseDate=s.reportDate;   // trades after this date add to it
     });
     if(result.symbolMap)Object.assign(pf.symbolMap,result.symbolMap);
-    pf.holdingsAsOf=s.reportDate;
     pf.holdingsAsOf=s.reportDate;pf.holdingsSource='positions report';
-    rebuildFromTrades(pf);recordSnapshot(pf,s.reportDate);saveState();pendingImport=null;
+    if((result.trades||[]).length){
+      pf.trades=(pf.trades||[]).concat(result.trades)
+        .sort((a,b)=>((a.date||'')+(a.time||'')).localeCompare((b.date||'')+(b.time||'')));
+    }
+    if((result.deposits||[]).length){
+      pf.contributions=(pf.contributions||[]).concat(
+        result.deposits.map(d=>({id:uid(),date:d.date,amount:d.amount})));
+      pf.contributions.sort((a,b)=>a.date.localeCompare(b.date));
+    }
+    rebuildFromTrades(pf);restampSnapshots(pf);recordSnapshot(pf,s.reportDate);
+    saveState();pendingImport=null;
     document.getElementById('reportFile').value='';refreshAfterImport();
     el.innerHTML=`<div class="importSummary"><b>Imported ${s.rowsParsed-s.ignored} position row(s)</b><div class="help" style="margin:5px 0 0">Holdings now reflect the report dated ${esc(s.reportDate)}.</div>${sheetDone()}</div>`;
     bindSheetDone();
@@ -2226,7 +2365,7 @@ function portfolioValue(pf){
 }
 function recordSnapshot(pf,date){
   const total=portfolioValue(pf);if(!(total>0)||!date)return;
-  const invested=r2(contribTotal(pf));
+  const invested=r2(investedAsOf(pf,date));
   pf.snapshots=pf.snapshots||[];const existing=pf.snapshots.find(s=>s.d===date);
   if(existing){existing.v=r2(total);existing.c=invested;}
   else pf.snapshots.push({d:date,v:r2(total),c:invested});
